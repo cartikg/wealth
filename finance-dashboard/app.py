@@ -2876,25 +2876,35 @@ def scan_receipt():
         if not img_bytes:
             return jsonify({'error': 'Empty image file'}), 400
 
-        # Convert to JPEG via Pillow — handles HEIC, TIFF, BMP, oversized images
-        from PIL import Image
-        img = Image.open(io.BytesIO(img_bytes))
+        # Try to normalise image to JPEG via Pillow (handles TIFF, BMP, oversized, etc.)
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_bytes))
 
-        # Resize if very large (Claude has limits, and huge photos are slow)
-        max_dim = 2048
-        if max(img.size) > max_dim:
-            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+            # Resize if very large (Claude limits + speed)
+            max_dim = 2048
+            if max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.LANCZOS)
 
-        # Convert to RGB JPEG (strips alpha, handles HEIC/TIFF/etc.)
-        if img.mode in ('RGBA', 'P', 'LA'):
-            img = img.convert('RGB')
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
+            # Convert to RGB JPEG
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
 
-        buf = io.BytesIO()
-        img.save(buf, format='JPEG', quality=85)
-        img_bytes = buf.getvalue()
-        media_type = 'image/jpeg'
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=85)
+            img_bytes = buf.getvalue()
+            media_type = 'image/jpeg'
+        except Exception as pil_err:
+            # Pillow couldn't open it (e.g. HEIC without plugin) — detect type from bytes
+            print(f"[Receipt] Pillow conversion failed ({pil_err}), sending raw image")
+            if img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                media_type = 'image/png'
+            elif img_bytes[:2] == b'\xff\xd8':
+                media_type = 'image/jpeg'
+            elif img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
+                media_type = 'image/webp'
+            else:
+                media_type = 'image/jpeg'  # best guess
 
         img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
 
