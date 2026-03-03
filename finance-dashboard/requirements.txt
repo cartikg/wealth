@@ -30,3 +30,4 @@ zipp==3.23.0
 requests==2.32.3
 SQLAlchemy
 psycopg2-binary
+Pillow

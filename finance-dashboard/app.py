@@ -2871,22 +2871,32 @@ def scan_receipt():
     try:
         data = load_data()
 
-        # Read image and convert to base64
+        # Read image bytes
         img_bytes = file.read()
         if not img_bytes:
             return jsonify({'error': 'Empty image file'}), 400
-        img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
 
-        # Detect media type (safe even if filename is None)
-        filename = (file.filename or 'receipt.jpg').lower()
-        if filename.endswith('.png'):
-            media_type = 'image/png'
-        elif filename.endswith('.webp'):
-            media_type = 'image/webp'
-        elif filename.endswith('.gif'):
-            media_type = 'image/gif'
-        else:
-            media_type = 'image/jpeg'
+        # Convert to JPEG via Pillow — handles HEIC, TIFF, BMP, oversized images
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+
+        # Resize if very large (Claude has limits, and huge photos are slow)
+        max_dim = 2048
+        if max(img.size) > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+
+        # Convert to RGB JPEG (strips alpha, handles HEIC/TIFF/etc.)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=85)
+        img_bytes = buf.getvalue()
+        media_type = 'image/jpeg'
+
+        img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
 
         # Get account info for context
         accounts = data.get('accounts', [])
