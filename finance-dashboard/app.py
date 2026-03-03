@@ -10,6 +10,20 @@ import uuid
 from datetime import datetime, timedelta
 from anthropic import Anthropic
 import requests
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+# ── Database setup ────────────────────────────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
+
+from models import User
+Base.metadata.create_all(bind=engine)
+
+# ── Resolve paths relative to this file (works regardless of CWD) ────────────
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 app.secret_key = 'wealth-dashboard-secret-2024'
@@ -81,7 +95,7 @@ def auth_login():
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
-DATA_FILE = 'data.json'
+DATA_FILE = os.path.join(_APP_DIR, 'data.json')
 
 CATEGORIES = [
     'Food & Dining', 'Shopping', 'Transport', 'Entertainment',
@@ -2640,7 +2654,7 @@ def clear_data():
 
 # ─── Demo Mode ─────────────────────────────────────────────────────────────────
 
-DEMO_BACKUP_FILE = 'data_backup.json'
+DEMO_BACKUP_FILE = os.path.join(_APP_DIR, 'data_backup.json')
 
 def generate_demo_data():
     """Generate a realistic but fake dataset for demo/presentation mode."""
@@ -2810,8 +2824,8 @@ def toggle_demo_mode():
 
 # ─── Receipt Scanning ─────────────────────────────────────────────────────────
 
-RECEIPTS_FILE = 'receipts.json'
-RECEIPTS_DIR = 'receipts_store'
+RECEIPTS_FILE = os.path.join(_APP_DIR, 'receipts.json')
+RECEIPTS_DIR = os.path.join(_APP_DIR, 'receipts_store')
 os.makedirs(RECEIPTS_DIR, exist_ok=True)
 
 def load_receipts():
@@ -2833,7 +2847,9 @@ def get_receipts():
 @app.route('/api/receipts/scan', methods=['POST'])
 def scan_receipt():
     """Upload and scan a receipt image using Claude Vision."""
-    data = load_data()
+    import base64
+    import traceback
+
     file = request.files.get('image')
     account_id = request.form.get('account_id', '')
     currency = request.form.get('currency', 'GBP')
@@ -2841,30 +2857,34 @@ def scan_receipt():
     if not file:
         return jsonify({'error': 'No image uploaded'}), 400
 
-    # Read image and convert to base64
-    import base64
-    img_bytes = file.read()
-    img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
-    
-    # Detect media type
-    filename = file.filename.lower()
-    if filename.endswith('.png'):
-        media_type = 'image/png'
-    elif filename.endswith('.webp'):
-        media_type = 'image/webp'
-    elif filename.endswith('.gif'):
-        media_type = 'image/gif'
-    else:
-        media_type = 'image/jpeg'
+    try:
+        data = load_data()
 
-    # Get account info for context
-    accounts = data.get('accounts', [])
-    account = next((a for a in accounts if a['id'] == account_id), None)
-    account_name = account['name'] if account else 'Unknown account'
-    account_bank = account.get('bank', '') if account else ''
+        # Read image and convert to base64
+        img_bytes = file.read()
+        if not img_bytes:
+            return jsonify({'error': 'Empty image file'}), 400
+        img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
 
-    # Ask Claude to extract ALL itemised data from the receipt
-    prompt = f"""You are scanning a receipt image. Extract every single item and piece of information from this receipt.
+        # Detect media type (safe even if filename is None)
+        filename = (file.filename or 'receipt.jpg').lower()
+        if filename.endswith('.png'):
+            media_type = 'image/png'
+        elif filename.endswith('.webp'):
+            media_type = 'image/webp'
+        elif filename.endswith('.gif'):
+            media_type = 'image/gif'
+        else:
+            media_type = 'image/jpeg'
+
+        # Get account info for context
+        accounts = data.get('accounts', [])
+        account = next((a for a in accounts if a['id'] == account_id), None)
+        account_name = account['name'] if account else 'Unknown account'
+        account_bank = account.get('bank', '') if account else ''
+
+        # Ask Claude to extract ALL itemised data from the receipt
+        prompt = f"""You are scanning a receipt image. Extract every single item and piece of information from this receipt.
 
 Return a JSON object with this exact structure:
 {{
@@ -2891,7 +2911,6 @@ Return a JSON object with this exact structure:
 
 Be thorough — capture every line item. If quantity is not shown, assume 1. Return ONLY valid JSON."""
 
-    try:
         response = client.messages.create(
             model='claude-haiku-4-5-20251001',
             max_tokens=4000,
@@ -2918,7 +2937,7 @@ Be thorough — capture every line item. If quantity is not shown, assume 1. Ret
         if text.startswith('```'):
             text = '\n'.join(text.split('\n')[1:])
             text = text.rsplit('```', 1)[0]
-        
+
         parsed = json.loads(text)
 
         # Save image file
@@ -2961,7 +2980,8 @@ Be thorough — capture every line item. If quantity is not shown, assume 1. Ret
     except json.JSONDecodeError as e:
         return jsonify({'error': f'Could not parse receipt data: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'detail': traceback.format_exc()}), 500
 
 
 @app.route('/api/receipts/<receipt_id>/add-transaction', methods=['POST'])
@@ -3263,7 +3283,7 @@ def tl_connect():
     state = secrets.token_urlsafe(16)
 
     # Store state for CSRF verification
-    state_file = 'tl_state.json'
+    state_file = os.path.join(_APP_DIR, 'tl_state.json')
     with open(state_file, 'w') as f:
         json.dump({'state': state, 'created': datetime.now().isoformat()}, f)
 
@@ -3300,7 +3320,7 @@ def tl_callback():
         </script>'''
 
     # Verify state
-    state_file = 'tl_state.json'
+    state_file = os.path.join(_APP_DIR, 'tl_state.json')
     if os.path.exists(state_file):
         with open(state_file) as f:
             saved = json.load(f)
