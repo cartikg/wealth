@@ -28,7 +28,18 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 app.secret_key = 'wealth-dashboard-secret-2024'
 CORS(app)
-client = Anthropic()
+
+# Lazy Anthropic client — app works without API key, Claude features just return errors
+_anthropic_client = None
+
+def get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise RuntimeError('ANTHROPIC_API_KEY not set. Add it to your environment variables.')
+        _anthropic_client = Anthropic(api_key=api_key)
+    return _anthropic_client
 
 # Auth guard + request logging
 AUTH_EXEMPT = {'/api/health', '/api/auth/status', '/api/auth/setup', '/api/auth/login'}
@@ -972,7 +983,7 @@ def upload_csv():
     reader = csv.DictReader(io.StringIO(content))
     rows = list(reader)
 
-    msg = client.messages.create(
+    msg = get_anthropic_client().messages.create(
         model='claude-haiku-4-5-20251001',
         max_tokens=8000,
         messages=[{'role': 'user', 'content': f"""Parse bank transactions into JSON array.
@@ -1114,7 +1125,7 @@ def import_portfolio():
 
         if not holdings:
             # Fall back to Claude parsing
-            msg = client.messages.create(
+            msg = get_anthropic_client().messages.create(
                 model='claude-haiku-4-5-20251001',
                 max_tokens=4000,
                 messages=[{'role': 'user', 'content': f"""Parse this investment portfolio CSV into JSON array.
@@ -1183,7 +1194,7 @@ def _import_emma(data, rows, headers, content_str):
     
     if not date_col or not amount_col:
         # Fall back to Claude parsing for unusual formats
-        msg = client.messages.create(
+        msg = get_anthropic_client().messages.create(
             model='claude-haiku-4-5-20251001',
             max_tokens=8000,
             messages=[{'role': 'user', 'content': f"""Parse these Emma app transactions into JSON array.
@@ -2633,7 +2644,7 @@ Format numbers with £ and commas. Use bullet points sparingly. Keep responses u
     import time
     for attempt in range(3):
         try:
-            response = client.messages.create(model='claude-haiku-4-5-20251001', max_tokens=1500, system=context, messages=history[-10:])
+            response = get_anthropic_client().messages.create(model='claude-haiku-4-5-20251001', max_tokens=1500, system=context, messages=history[-10:])
             break
         except Exception as e:
             if 'overloaded' in str(e).lower() and attempt < 2:
@@ -2911,7 +2922,7 @@ Return a JSON object with this exact structure:
 
 Be thorough — capture every line item. If quantity is not shown, assume 1. Return ONLY valid JSON."""
 
-        response = client.messages.create(
+        response = get_anthropic_client().messages.create(
             model='claude-haiku-4-5-20251001',
             max_tokens=4000,
             messages=[{
