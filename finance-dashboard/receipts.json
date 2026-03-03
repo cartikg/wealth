@@ -1,0 +1,44 @@
+[
+  {
+    "id": "a382b51f-9147-443d-b6f9-072700af21bb",
+    "image_file": "a382b51f-9147-443d-b6f9-072700af21bb.jpg",
+    "account_id": "uk-main",
+    "account_name": "UK Current",
+    "account_bank": "Monzo",
+    "currency": "GBP",
+    "store": "India's Grill",
+    "store_category": "Restaurant",
+    "date": "2025-05-21",
+    "time": "22:58",
+    "subtotal": 28.82,
+    "tax": 2.18,
+    "total": 31.0,
+    "payment_method_hint": "cash",
+    "receipt_number": "7560",
+    "items": [
+      {
+        "name": "Bhel Puri",
+        "quantity": 1,
+        "unit_price": 7.95,
+        "total_price": 7.95,
+        "category": "Other"
+      },
+      {
+        "name": "Dinner Royal VEG (1)",
+        "quantity": 1,
+        "unit_price": 19.95,
+        "total_price": 19.95,
+        "category": "Other"
+      },
+      {
+        "name": "CC FEE",
+        "quantity": 1,
+        "unit_price": 0.92,
+        "total_price": 0.92,
+        "category": "Other"
+      }
+    ],
+    "scanned_at": "2026-03-02T02:43:30.987905",
+    "added_to_transactions": false
+  }
+]

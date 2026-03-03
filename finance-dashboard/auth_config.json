@@ -1,0 +1,5 @@
+{
+  "password_hash": "d490a74967c9e1a16cb694f64a5539ce3b039e38308e583542ec1c48b225a955",
+  "salt": "71c9173204b2ed171a2f16b490adfe39",
+  "jwt_secret": "69a6d096df7ef079f35dc8f30cbd75fb1c38d187215d3f9a2cf59ff35bc0230f"
+}

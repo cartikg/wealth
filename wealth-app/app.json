@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Wealth",
+    "slug": "wealth-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#080810"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.yourname.wealth",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan receipts and extract itemised spending data",
+        "NSPhotoLibraryUsageDescription": "Used to pick receipt photos from your library",
+        "NSFaceIDUsageDescription": "Used to secure your financial data"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        { "cameraPermission": "Allow Wealth to scan your receipts" }
+      ],
+      [
+        "expo-image-picker",
+        { "photosPermission": "Allow Wealth to access receipt photos" }
+      ]
+    ],
+    "scheme": "wealth",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
