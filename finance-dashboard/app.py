@@ -3324,17 +3324,18 @@ def tl_connect():
         json.dump({'state': state, 'created': datetime.now().isoformat()}, f)
 
     # TrueLayer scopes for read-only bank data
-    scopes = 'info accounts balance transactions offline_access'
+    # Must include cards, direct_debits, standing_orders for Live mode
+    scopes = 'info accounts balance cards transactions direct_debits standing_orders offline_access'
 
-    # Providers we want to show (blank = all providers)
-    # Use 'providers=uk-ob-all uk-ob-revolut' etc. to restrict
+    # uk-ob-all  = all UK Open Banking providers (traditional banks)
+    # uk-oauth-all = all UK OAuth providers (Revolut, Monzo, Starling, etc.)
     params = {
         'response_type': 'code',
         'client_id': TRUELAYER_CLIENT_ID,
         'scope': scopes,
         'redirect_uri': TRUELAYER_REDIRECT_URI,
         'state': state,
-        'providers': 'uk-ob-all uk-ob-revolut',  # All UK Open Banking banks
+        'providers': 'uk-ob-all uk-oauth-all',
     }
 
     from urllib.parse import urlencode
