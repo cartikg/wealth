@@ -15,11 +15,14 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 # ── Database setup ────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db")
+# Render supplies postgres:// but SQLAlchemy 1.4+ requires postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-from models import User
+from models import User, TLConnection
 Base.metadata.create_all(bind=engine)
 
 # ── Resolve paths relative to this file (works regardless of CWD) ────────────
@@ -3231,15 +3234,46 @@ TRUELAYER_ENV           = os.environ.get('TRUELAYER_ENV', 'sandbox')  # 'sandbox
 TL_AUTH_URL = 'https://auth.truelayer-sandbox.com' if TRUELAYER_ENV == 'sandbox' else 'https://auth.truelayer.com'
 TL_API_URL  = 'https://api.truelayer-sandbox.com'  if TRUELAYER_ENV == 'sandbox' else 'https://api.truelayer.com'
 
-TRUELAYER_FILE = 'truelayer_connections.json'
+TRUELAYER_FILE = os.path.join(_APP_DIR, 'truelayer_connections.json')  # legacy fallback
 
 def load_tl_connections():
+    """Load TrueLayer connections from DB (persistent across Render redeploys)."""
+    try:
+        db = SessionLocal()
+        rows = db.query(TLConnection).all()
+        db.close()
+        if rows:
+            return [json.loads(r.data) for r in rows]
+    except Exception as e:
+        print(f'[TL] DB load failed, falling back to file: {e}')
+    # Legacy file fallback (local dev or first run before DB is ready)
     if os.path.exists(TRUELAYER_FILE):
         with open(TRUELAYER_FILE, 'r') as f:
             return json.load(f)
     return []
 
 def save_tl_connections(connections):
+    """Save TrueLayer connections to DB (persistent across Render redeploys)."""
+    try:
+        db = SessionLocal()
+        existing_ids = {r.id for r in db.query(TLConnection).all()}
+        new_ids = {c['id'] for c in connections}
+        # Delete removed connections
+        for rid in existing_ids - new_ids:
+            db.query(TLConnection).filter(TLConnection.id == rid).delete()
+        # Upsert each connection
+        for conn in connections:
+            row = db.query(TLConnection).filter(TLConnection.id == conn['id']).first()
+            if row:
+                row.data = json.dumps(conn)
+            else:
+                db.add(TLConnection(id=conn['id'], data=json.dumps(conn)))
+        db.commit()
+        db.close()
+        return
+    except Exception as e:
+        print(f'[TL] DB save failed, falling back to file: {e}')
+    # Legacy file fallback
     with open(TRUELAYER_FILE, 'w') as f:
         json.dump(connections, f, indent=2)
 
