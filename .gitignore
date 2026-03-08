@@ -1,1 +1,25 @@
+# Python
 .venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Sensitive / personal data — never commit
+finance-dashboard/data.json
+finance-dashboard/data_backup.json
+finance-dashboard/auth_config.json
+finance-dashboard/tl_state.json
+finance-dashboard/receipts.json
+finance-dashboard/receipts_store/
+
+# Node / React Native
+wealth-app/node_modules/
+wealth-app/.expo/
+wealth-app/dist/
+
+# OS
+.DS_Store
+**/.DS_Store
+
+# Claude memory
+.claude/

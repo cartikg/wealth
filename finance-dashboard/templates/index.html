@@ -1073,6 +1073,124 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         </details>
       </div>
 
+      <!-- ── Portfolio Analytics (Snowball-style) ─────────────────────────── -->
+      <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden" id="portfolio-analytics-card">
+
+        <!-- Tab bar -->
+        <div style="display:flex;border-bottom:1px solid var(--border);padding:0 4px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <button onclick="paTab('overview')" id="pa-tab-overview" style="padding:12px 16px;background:none;border:none;border-bottom:2px solid var(--gold);color:var(--gold);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap">📊 Overview</button>
+          <button onclick="paTab('diversification')" id="pa-tab-diversification" style="padding:12px 16px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text3);font-size:13px;cursor:pointer;white-space:nowrap">🎯 Diversification</button>
+          <button onclick="paTab('dividends')" id="pa-tab-dividends" style="padding:12px 16px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text3);font-size:13px;cursor:pointer;white-space:nowrap">💷 Dividends</button>
+          <button onclick="paTab('returns')" id="pa-tab-returns" style="padding:12px 16px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text3);font-size:13px;cursor:pointer;white-space:nowrap">📈 Returns</button>
+        </div>
+
+        <!-- ── Overview panel ── -->
+        <div id="pa-panel-overview" style="padding:16px">
+          <!-- 4 KPI cards -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px;margin-bottom:18px">
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Portfolio Value</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-kpi-value" class="privacy-blur">£—</div>
+              <div style="font-size:11px;color:var(--text3)" id="pa-kpi-invested" class="privacy-blur">£— invested</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Total Profit</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-kpi-gain" class="privacy-blur">£—</div>
+              <div style="font-size:11px;margin-top:2px" id="pa-kpi-gain-pct" class="privacy-blur">—%</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Passive Income</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-kpi-income" class="privacy-blur">£—</div>
+              <div style="font-size:11px;color:var(--text3)" id="pa-kpi-yield">—% yield/yr</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Diversification</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-kpi-hhi">—</div>
+              <div style="font-size:11px" id="pa-kpi-hhi-label">HHI score</div>
+            </div>
+          </div>
+          <!-- Sector breakdown: doughnut + table -->
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Holdings by Sector</div>
+          <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+            <div style="position:relative;width:170px;height:170px;flex-shrink:0"><canvas id="chart-pa-sector"></canvas></div>
+            <div style="flex:1;min-width:280px;overflow-x:auto" id="pa-sector-table"></div>
+          </div>
+        </div>
+
+        <!-- ── Diversification panel ── -->
+        <div id="pa-panel-diversification" style="padding:16px;display:none">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+            <button onclick="paDivFilter('sectors')" id="pa-divf-sectors" class="btn btn-gold btn-sm">Sectors</button>
+            <button onclick="paDivFilter('geo')" id="pa-divf-geo" class="btn btn-ghost btn-sm">Regions</button>
+            <button onclick="paDivFilter('buckets')" id="pa-divf-buckets" class="btn btn-ghost btn-sm">Buckets</button>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:14px">All holdings</div>
+          <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            <div style="position:relative;width:220px;height:220px;flex-shrink:0"><canvas id="chart-pa-div"></canvas></div>
+            <div style="flex:1;min-width:260px;max-height:400px;overflow-y:auto" id="pa-div-list"></div>
+          </div>
+        </div>
+
+        <!-- ── Dividends panel ── -->
+        <div id="pa-panel-dividends" style="padding:16px;display:none">
+          <!-- Dividend KPI cards -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:18px">
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Annual Income</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-div-annual" class="privacy-blur">£—</div>
+              <div style="font-size:11px;color:var(--text3)" id="pa-div-monthly" class="privacy-blur">£—/month</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Yield on Value</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-div-yield">—%</div>
+              <div style="font-size:11px;color:var(--text3)" id="pa-div-yoc">—% on cost</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--text3)">Dividend Payers</div>
+              <div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin:5px 0 3px" id="pa-div-count">—</div>
+              <div style="font-size:11px;color:var(--text3)">of <span id="pa-div-total-count">—</span> positions</div>
+            </div>
+          </div>
+          <!-- Yield/payout bar + income diversification -->
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <div style="flex:1;min-width:280px">
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Yield / Payout by Holding</div>
+              <div class="chart-wrap-sm"><canvas id="chart-pa-yield"></canvas></div>
+            </div>
+            <div style="flex:1;min-width:260px">
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Income Diversification</div>
+              <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+                <div style="position:relative;width:140px;height:140px;flex-shrink:0"><canvas id="chart-pa-income-div"></canvas></div>
+                <div style="flex:1;min-width:150px" id="pa-income-div-list"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Historical dividends received -->
+          <div style="margin-top:16px">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Dividends Received</div>
+            <div id="pa-div-received"></div>
+          </div>
+        </div>
+
+        <!-- ── Returns panel ── -->
+        <div id="pa-panel-returns" style="padding:16px;display:none">
+          <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+            <input type="text" id="pa-returns-search" placeholder="Search holdings..." class="form-input" style="max-width:220px;font-size:12px" oninput="renderReturnsTable()">
+            <select id="pa-returns-sort" class="form-select" style="width:auto;font-size:12px" onchange="renderReturnsTable()">
+              <option value="value">Sort: Value ↓</option>
+              <option value="gain_pct">Sort: Gain % (best)</option>
+              <option value="loss_pct">Sort: Loss % (worst)</option>
+              <option value="gain_abs">Sort: Gain £ (best)</option>
+              <option value="allocation">Sort: Allocation %</option>
+              <option value="name">Sort: Name A-Z</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-left:auto" id="pa-returns-count"></div>
+          </div>
+          <div style="overflow-x:auto" id="pa-returns-table"></div>
+        </div>
+
+      </div><!-- /portfolio-analytics-card -->
+
       <!-- Dividend Summary (Phase 2D) -->
       <div class="card" style="margin-bottom:16px" id="dividend-summary-card" style="display:none">
         <div class="card-label" style="margin-bottom:12px">💷 Dividend Income</div>
@@ -3259,6 +3377,7 @@ function renderInvestments() {
 
   renderCAGR();
   renderAllocation();
+  renderPortfolioAnalytics();
   renderDividendSummary();
   renderDisposals();
   renderIncomeTax();
@@ -5551,6 +5670,421 @@ async function saveAllocTargets() {
   await load();
 }
 
+// ── Portfolio Analytics (Snowball-style) ──────────────────────────────────────
+const PA_SECTOR_COLORS = {
+  'Information Technology':'#3B82F6','Technology':'#3B82F6','Financials':'#8B5CF6',
+  'Communication Services':'#EC4899','Healthcare':'#22D3EE','Consumer Discretionary':'#F59E0B',
+  'Industrials':'#6366F1','Consumer Staples':'#22C55E','Energy':'#EF4444',
+  'Utilities':'#60A5FA','Materials':'#A78BFA','Real Estate':'#F97316',
+  'Crypto':'#A855F7','Pension Funds':'#14B8A6','Alternative':'#FB923C','Unknown':'#6B7280'
+};
+const PA_BUCKET_COLORS = { isa:'#3B82F6', pension:'#8B5CF6', crypto:'#A78BFA', rsu:'#22D3EE', stocks:'#22C55E', custom:'#F59E0B' };
+const PA_BUCKET_LABELS = { isa:'ISA', pension:'Pension', crypto:'Crypto', rsu:'RSU', stocks:'Non-ISA Stocks', custom:'Custom' };
+const PA_GEO_COLORS = { US:'#3B82F6', UK:'#8B5CF6', EU:'#22C55E', Global:'#22D3EE', EM:'#EF4444', Asia:'#F59E0B', IN:'#A855F7', JP:'#FB923C', CN:'#6366F1', Other:'#6B7280' };
+
+let _paHoldings = [];
+let _paDivFilter = 'sectors';
+
+function _paGetColor(key, palette) {
+  if (palette[key]) return palette[key];
+  // deterministic colour for unknown keys
+  let h = 0; for (let i = 0; i < key.length; i++) h = ((h << 5) - h) + key.charCodeAt(i);
+  return '#' + Math.abs(h).toString(16).slice(0, 6).padStart(6, '8');
+}
+
+function _paAllHoldings() {
+  if (!D || !D.investments) return [];
+  const inv = D.investments;
+  const totalInv = (D.totals || {}).investments_gbp || 0;
+  const all = [];
+  for (const [bucket, holdings] of Object.entries(inv)) {
+    if (!Array.isArray(holdings)) continue;
+    for (const h of holdings) {
+      const val = +(h.value_gbp || h.current_value || 0);
+      if (val <= 0) continue;
+      const invested = +(h.invested_gbp || h.invested || h.total_contributed || 0);
+      let gain;
+      if (bucket === 'rsu') gain = +(h.gain_since_vest || (val - invested));
+      else if (bucket === 'crypto') gain = val - invested;
+      else gain = +(h.gain_gbp || (invested > 0 ? val - invested : 0));
+      const gainPct = invested > 0 ? (gain / invested * 100) : 0;
+      const name = h.name || h.ticker || h.company || h.coin_id || '—';
+      const ticker = h.ticker || h.coin_id || '';
+      let sector, geo;
+      if (bucket === 'crypto')       { sector = 'Crypto'; geo = 'Global'; }
+      else if (bucket === 'pension') { sector = 'Pension Funds'; geo = h.geography || 'Global'; }
+      else if (bucket === 'custom')  { sector = h.sector || 'Alternative'; geo = h.geography || 'Other'; }
+      else                           { sector = h.sector || 'Unknown'; geo = h.geography || 'Global'; }
+      const projDivIncome = val * (h.dividend_yield_pct || 0) / 100;
+      const divReceived = (h.dividends || []).reduce((s, d) => s + (d.amount_gbp || 0), 0);
+      all.push({ name, ticker, bucket, val, invested, gain, gainPct, sector, geo,
+        divYield: h.dividend_yield_pct || 0, projDivIncome, divReceived,
+        weightPct: totalInv > 0 ? (val / totalInv * 100) : 0, id: h.id,
+        dividends: h.dividends || [] });
+    }
+  }
+  all.sort((a, b) => b.val - a.val);
+  return all;
+}
+
+function renderPortfolioAnalytics() {
+  if (!D || !D.investments) return;
+  _paHoldings = _paAllHoldings();
+  if (!_paHoldings.length) return;
+  _renderPaOverview();
+  _renderPaDiversification(_paDivFilter);
+  _renderPaDividends();
+  renderReturnsTable();
+}
+
+function paTab(name) {
+  ['overview','diversification','dividends','returns'].forEach(t => {
+    const panel = document.getElementById('pa-panel-' + t);
+    const tab   = document.getElementById('pa-tab-' + t);
+    if (!panel || !tab) return;
+    const active = t === name;
+    panel.style.display = active ? 'block' : 'none';
+    tab.style.color = active ? 'var(--gold)' : 'var(--text3)';
+    tab.style.borderBottomColor = active ? 'var(--gold)' : 'transparent';
+    tab.style.fontWeight = active ? '500' : '400';
+  });
+  // Re-render the active panel to ensure charts size correctly
+  if (name === 'diversification') _renderPaDiversification(_paDivFilter);
+  if (name === 'dividends')       _renderPaDividends();
+  if (name === 'returns')         renderReturnsTable();
+}
+
+function paDivFilter(filter) {
+  _paDivFilter = filter;
+  ['sectors','geo','buckets'].forEach(f => {
+    const btn = document.getElementById('pa-divf-' + f);
+    if (btn) btn.className = f === filter ? 'btn btn-gold btn-sm' : 'btn btn-ghost btn-sm';
+  });
+  _renderPaDiversification(filter);
+}
+
+// ── Overview panel ────────────────────────────────────────────────────────────
+function _renderPaOverview() {
+  const all = _paHoldings;
+  const t = D.totals || {};
+  const totalVal     = t.investments_gbp || 0;
+  const totalInvested = all.reduce((s, h) => s + h.invested, 0);
+  const totalGain    = all.reduce((s, h) => s + h.gain, 0);
+  const gainPct      = totalInvested > 0 ? (totalGain / totalInvested * 100) : 0;
+  const projIncome   = all.reduce((s, h) => s + h.projDivIncome, 0);
+  const yieldPct     = totalVal > 0 ? (projIncome / totalVal * 100) : 0;
+
+  // HHI
+  let hhi = 0;
+  for (const h of all) hhi += (h.val / (totalVal || 1)) ** 2;
+  const hhiScore = Math.round(hhi * 10000);
+  const hhiMeta = hhiScore < 1000 ? { l:'Diversified',   c:'var(--teal)' }
+                : hhiScore < 1800 ? { l:'Moderate',      c:'#F59E0B' }
+                :                   { l:'Concentrated',  c:'var(--rose)' };
+
+  set('pa-kpi-value',    fmtGBP(totalVal));
+  set('pa-kpi-invested', fmtGBP(totalInvested) + ' invested');
+  const gainEl = document.getElementById('pa-kpi-gain');
+  if (gainEl) { gainEl.textContent = (totalGain >= 0 ? '+' : '') + fmtGBP(totalGain); gainEl.style.color = totalGain >= 0 ? 'var(--teal)' : 'var(--rose)'; }
+  const gPctEl = document.getElementById('pa-kpi-gain-pct');
+  if (gPctEl) { gPctEl.textContent = (gainPct >= 0 ? '+' : '') + gainPct.toFixed(1) + '%'; gPctEl.style.color = gainPct >= 0 ? 'var(--teal)' : 'var(--rose)'; }
+  set('pa-kpi-income', fmtGBP(projIncome));
+  set('pa-kpi-yield',  yieldPct.toFixed(2) + '% yield/yr');
+  set('pa-kpi-hhi',    hhiScore);
+  const hhiEl = document.getElementById('pa-kpi-hhi-label');
+  if (hhiEl) { hhiEl.textContent = hhiMeta.l; hhiEl.style.color = hhiMeta.c; }
+
+  // Sector aggregation
+  const bySector = {};
+  for (const h of all) {
+    if (!bySector[h.sector]) bySector[h.sector] = { val:0, invested:0, gain:0, count:0 };
+    bySector[h.sector].val     += h.val;
+    bySector[h.sector].invested += h.invested;
+    bySector[h.sector].gain    += h.gain;
+    bySector[h.sector].count++;
+  }
+  const sectors = Object.entries(bySector).sort((a, b) => b[1].val - a[1].val);
+
+  // Sector doughnut
+  mkChart('chart-pa-sector', 'doughnut', {
+    labels: sectors.map(([k]) => k),
+    datasets: [{ data: sectors.map(([,v]) => v.val),
+      backgroundColor: sectors.map(([k]) => _paGetColor(k, PA_SECTOR_COLORS)),
+      borderWidth: 0, hoverOffset: 8 }]
+  }, { plugins: { legend: { display: false },
+    tooltip: { callbacks: { label: ctx => ` ${fmtGBP(ctx.raw)} (${(ctx.raw/totalVal*100).toFixed(1)}%)` }} }});
+
+  // Sector table
+  const sEl = document.getElementById('pa-sector-table');
+  if (!sEl) return;
+  let html = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:6px 8px;color:var(--text3);font-weight:500">Sector</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Value / Invested</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Gain</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Alloc</th>
+    </tr></thead><tbody>`;
+  for (const [sector, s] of sectors) {
+    const alloc = totalVal > 0 ? (s.val / totalVal * 100) : 0;
+    const gCol  = s.gain >= 0 ? 'var(--teal)' : 'var(--rose)';
+    const gPctS = s.invested > 0 ? (s.gain / s.invested * 100).toFixed(1) : '0.0';
+    const dot   = _paGetColor(sector, PA_SECTOR_COLORS);
+    html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">
+      <td style="padding:7px 8px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0"></span>
+          <div><div style="font-weight:500">${sector}</div>
+               <div style="font-size:10px;color:var(--text3)">${s.count} item${s.count!==1?'s':''}</div></div>
+        </div></td>
+      <td style="padding:7px 8px;text-align:right">
+        <div class="privacy-blur">${fmtGBP(s.val)}</div>
+        <div style="font-size:10px;color:var(--text3)" class="privacy-blur">${fmtGBP(s.invested)}</div></td>
+      <td style="padding:7px 8px;text-align:right;color:${gCol}" class="privacy-blur">
+        <div>${s.gain>=0?'+':''}${fmtGBP(s.gain)}</div>
+        <div style="font-size:10px">${gPctS>=0?'+':''}${gPctS}%</div></td>
+      <td style="padding:7px 8px;text-align:right">
+        <div style="font-weight:600">${alloc.toFixed(1)}%</div>
+        <div style="height:4px;background:var(--surface2);border-radius:2px;margin-top:4px;width:56px;margin-left:auto">
+          <div style="height:4px;border-radius:2px;background:${dot};width:${Math.min(alloc,100)}%"></div></div></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  sEl.innerHTML = html;
+}
+
+// ── Diversification panel ─────────────────────────────────────────────────────
+function _renderPaDiversification(filter) {
+  const all = _paHoldings;
+  const totalVal = all.reduce((s, h) => s + h.val, 0) || 1;
+  let groups = {};
+  let palette = {};
+
+  if (filter === 'sectors') {
+    for (const h of all) groups[h.sector] = (groups[h.sector]||0) + h.val;
+    palette = PA_SECTOR_COLORS;
+  } else if (filter === 'geo') {
+    for (const h of all) groups[h.geo] = (groups[h.geo]||0) + h.val;
+    palette = PA_GEO_COLORS;
+  } else {
+    for (const h of all) {
+      const lbl = PA_BUCKET_LABELS[h.bucket] || h.bucket;
+      groups[lbl] = (groups[lbl]||0) + h.val;
+    }
+    palette = { ISA:'#3B82F6', Pension:'#8B5CF6', Crypto:'#A78BFA', RSU:'#22D3EE', 'Non-ISA Stocks':'#22C55E', Custom:'#F59E0B' };
+  }
+
+  const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+  const getCol = k => _paGetColor(k, palette);
+
+  mkChart('chart-pa-div', 'doughnut', {
+    labels: sorted.map(([k]) => k),
+    datasets: [{ data: sorted.map(([,v]) => v),
+      backgroundColor: sorted.map(([k]) => getCol(k)),
+      borderWidth: 0, hoverOffset: 10 }]
+  }, { plugins: { legend: { display: false },
+    tooltip: { callbacks: { label: ctx => ` ${fmtGBP(ctx.raw)} (${(ctx.raw/totalVal*100).toFixed(1)}%)` }} }});
+
+  // Holdings list with weight bars (like Snowball diversification view)
+  const listEl = document.getElementById('pa-div-list');
+  if (!listEl) return;
+  const show = all.slice(0, 40);
+  const maxPct = show[0] ? (show[0].val / totalVal * 100) : 1;
+  let html = '';
+  for (const h of show) {
+    const pct = (h.val / totalVal * 100);
+    const groupKey = filter === 'sectors' ? h.sector : (filter === 'geo' ? h.geo : (PA_BUCKET_LABELS[h.bucket]||h.bucket));
+    const col = getCol(groupKey);
+    const barW = Math.min((pct / maxPct) * 100, 100).toFixed(0);
+    html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+      <span style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+          <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">
+            ${h.ticker ? `<span style="font-size:10px;color:var(--text3);margin-right:5px">${h.ticker}</span>` : ''}${h.name}</span>
+          <span style="font-size:12px;font-weight:600;white-space:nowrap;margin-left:8px">${pct.toFixed(2)}%</span>
+        </div>
+        <div style="height:4px;background:var(--surface2);border-radius:2px">
+          <div style="height:4px;border-radius:2px;background:${col};width:${barW}%"></div>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (all.length > 40) html += `<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:8px">+ ${all.length-40} more holdings</div>`;
+  listEl.innerHTML = html || '<div style="color:var(--text3);font-size:12px">No holdings found.</div>';
+}
+
+// ── Dividends panel ───────────────────────────────────────────────────────────
+function _renderPaDividends() {
+  const all = _paHoldings;
+  const totalVal      = all.reduce((s, h) => s + h.val, 0) || 1;
+  const totalInvested = all.reduce((s, h) => s + h.invested, 0) || 1;
+  const projAnnual    = all.reduce((s, h) => s + h.projDivIncome, 0);
+  const divPayers     = all.filter(h => h.divYield > 0);
+  const yieldOnVal    = projAnnual / totalVal * 100;
+  const yieldOnCost   = projAnnual / totalInvested * 100;
+  const totalReceived = all.reduce((s, h) => s + h.divReceived, 0);
+
+  set('pa-div-annual',      fmtGBP(projAnnual));
+  set('pa-div-monthly',     fmtGBP(projAnnual / 12) + '/month');
+  set('pa-div-yield',       yieldOnVal.toFixed(2) + '%');
+  set('pa-div-yoc',         yieldOnCost.toFixed(2) + '% on cost');
+  set('pa-div-count',       divPayers.length);
+  set('pa-div-total-count', all.length);
+
+  // Yield/payout bar chart
+  const payers = divPayers.sort((a, b) => b.divYield - a.divYield).slice(0, 12);
+  const yieldCanvasEl = document.getElementById('chart-pa-yield');
+  if (payers.length && yieldCanvasEl) {
+    mkChart('chart-pa-yield', 'bar', {
+      labels: payers.map(h => h.ticker || h.name.slice(0, 6)),
+      datasets: [{ label: 'Yield %',
+        data: payers.map(h => +h.divYield.toFixed(2)),
+        backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 5, borderWidth: 0 }]
+    }, { plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw}% · ${fmtGBP(payers[ctx.dataIndex].projDivIncome)}/yr` }} },
+      scales: { x: { grid:{display:false}, ticks:{color:'#9CA3AF',font:{size:10}} },
+                y: { grid:{color:'rgba(255,255,255,0.025)'}, ticks:{color:'#9CA3AF',callback:v=>v+'%'} } } });
+  } else if (yieldCanvasEl) {
+    yieldCanvasEl.parentElement.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:24px 0">No dividend yield data. Add a dividend yield % to your holdings to see income analysis.</div>';
+  }
+
+  // Income diversification doughnut
+  const incPayers = all.filter(h => h.projDivIncome > 0).sort((a, b) => b.projDivIncome - a.projDivIncome).slice(0, 8);
+  const INC_COLS = ['#3B82F6','#8B5CF6','#22D3EE','#22C55E','#F59E0B','#EC4899','#EF4444','#6366F1'];
+  if (incPayers.length && projAnnual > 0) {
+    mkChart('chart-pa-income-div', 'doughnut', {
+      labels: incPayers.map(h => h.ticker || h.name),
+      datasets: [{ data: incPayers.map(h => +h.projDivIncome.toFixed(2)),
+        backgroundColor: INC_COLS, borderWidth: 0, hoverOffset: 6 }]
+    }, { plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${fmtGBP(ctx.raw)}/yr (${(ctx.raw/projAnnual*100).toFixed(1)}%)` }} }});
+
+    const incListEl = document.getElementById('pa-income-div-list');
+    if (incListEl) {
+      incListEl.innerHTML = incPayers.map((h, i) => {
+        const pct = (h.projDivIncome / projAnnual * 100).toFixed(1);
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+          <span style="width:7px;height:7px;border-radius:50%;background:${INC_COLS[i]};flex-shrink:0"></span>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+              <span style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.ticker||h.name}</span>
+              <span style="font-size:11px;font-weight:600;white-space:nowrap;margin-left:6px">${pct}%</span>
+            </div>
+            <div style="height:3px;background:var(--surface2);border-radius:2px">
+              <div style="height:3px;border-radius:2px;background:${INC_COLS[i]};width:${pct}%"></div>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Historical dividends received
+  const recEl = document.getElementById('pa-div-received');
+  if (recEl) {
+    if (totalReceived > 0) {
+      // Group by month
+      const byMonth = {};
+      for (const h of all) {
+        for (const d of h.dividends) {
+          const mo = (d.date || '').slice(0, 7);
+          if (mo) byMonth[mo] = (byMonth[mo]||0) + (d.amount_gbp || 0);
+        }
+      }
+      const months = Object.entries(byMonth).sort((a,b)=>a[0].localeCompare(b[0])).slice(-12);
+      let html = `<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px">
+        <span style="font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--teal)" class="privacy-blur">${fmtGBP(totalReceived)}</span>
+        <span style="font-size:12px;color:var(--text3)">total received</span>
+      </div>`;
+      if (months.length) {
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+        for (const [mo, amt] of months) {
+          const label = new Date(mo + '-01').toLocaleDateString('en-GB',{month:'short',year:'2-digit'});
+          html += `<div style="background:var(--surface2);border-radius:6px;padding:6px 10px;text-align:center;font-size:11px">
+            <div style="color:var(--text3)">${label}</div>
+            <div style="font-weight:600;color:var(--teal);margin-top:2px" class="privacy-blur">${fmtGBP(amt)}</div>
+          </div>`;
+        }
+        html += '</div>';
+      }
+      recEl.innerHTML = html;
+    } else {
+      recEl.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0">No dividend payments recorded yet. Add dividends to individual holdings to track income history.</div>';
+    }
+  }
+}
+
+// ── Returns table ─────────────────────────────────────────────────────────────
+function renderReturnsTable() {
+  const all = _paHoldings;
+  if (!all.length) return;
+  const totalVal = all.reduce((s, h) => s + h.val, 0) || 1;
+  const search   = (document.getElementById('pa-returns-search')?.value || '').toLowerCase();
+  const sortKey  = document.getElementById('pa-returns-sort')?.value || 'value';
+
+  let filtered = search
+    ? all.filter(h => h.name.toLowerCase().includes(search) || h.ticker.toLowerCase().includes(search))
+    : [...all];
+
+  filtered.sort((a, b) => {
+    if (sortKey === 'gain_pct')  return b.gainPct - a.gainPct;
+    if (sortKey === 'loss_pct')  return a.gainPct - b.gainPct;
+    if (sortKey === 'gain_abs')  return b.gain - a.gain;
+    if (sortKey === 'allocation')return b.val - a.val;
+    if (sortKey === 'name')      return a.name.localeCompare(b.name);
+    return b.val - a.val;
+  });
+
+  const countEl = document.getElementById('pa-returns-count');
+  if (countEl) countEl.textContent = `${filtered.length} holding${filtered.length!==1?'s':''}`;
+
+  const el = document.getElementById('pa-returns-table');
+  if (!el) return;
+
+  let html = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Holding</th>
+      <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Cost Basis</th>
+      <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Current Value</th>
+      <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Capital Gain</th>
+      <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Allocation</th>
+    </tr></thead><tbody>`;
+
+  for (const h of filtered) {
+    const gCol  = h.gain >= 0 ? 'var(--teal)' : 'var(--rose)';
+    const alloc = (h.val / totalVal * 100);
+    const bCol  = PA_BUCKET_COLORS[h.bucket] || '#666';
+    const bLbl  = PA_BUCKET_LABELS[h.bucket] || h.bucket;
+    html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">
+      <td style="padding:7px 8px">
+        <div style="font-weight:500">${h.name}</div>
+        <div style="display:flex;gap:5px;margin-top:2px;flex-wrap:wrap">
+          ${h.ticker ? `<span style="font-size:10px;color:var(--text3)">${h.ticker}</span>` : ''}
+          <span style="font-size:10px;padding:0 5px;border-radius:3px;background:${bCol}22;color:${bCol}">${bLbl}</span>
+        </div>
+      </td>
+      <td style="padding:7px 8px;text-align:right;color:var(--text2)" class="privacy-blur">
+        ${h.invested > 0 ? fmtGBP(h.invested) : '<span style="color:var(--text3)">—</span>'}
+      </td>
+      <td style="padding:7px 8px;text-align:right;font-weight:500" class="privacy-blur">${fmtGBP(h.val)}</td>
+      <td style="padding:7px 8px;text-align:right;color:${gCol}" class="privacy-blur">
+        ${h.invested > 0
+          ? `<div>${h.gain>=0?'+':''}${fmtGBP(h.gain)}</div><div style="font-size:10px">${h.gainPct>=0?'+':''}${h.gainPct.toFixed(1)}%</div>`
+          : '<span style="color:var(--text3)">—</span>'}
+      </td>
+      <td style="padding:7px 8px;text-align:right">
+        <div style="font-weight:600;color:${alloc>15?'var(--rose)':'var(--text)'}">${alloc.toFixed(1)}%</div>
+        <div style="height:3px;background:var(--surface2);border-radius:2px;margin-top:3px;width:48px;margin-left:auto">
+          <div style="height:3px;border-radius:2px;background:${bCol};width:${Math.min(alloc*4,100)}%"></div>
+        </div>
+      </td>
+    </tr>`;
+  }
+  if (!filtered.length) html += `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">No holdings found</td></tr>`;
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
 // ── Phase 2D: Dividend Summary ───────────────────────────────────────────────
 function renderDividendSummary() {
   if (!D || !D.investments) return;
@@ -7039,15 +7573,18 @@ async function saveStock() {
 async function importPortfolio() {
   const file = document.getElementById('portfolio-file').files[0];
   if (!file) { toast('Please select a CSV file', 'error'); return; }
+  const bucket = document.getElementById('portfolio-import-bucket')?.value || 'isa';
   const sp = document.getElementById('portfolio-spinner');
   sp.style.display = 'inline-block';
   const fd = new FormData();
   fd.append('file', file);
+  fd.append('bucket', bucket);
   try {
     const r = await fetch('/api/portfolio/import', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    toast(`✅ Imported ${d.added} new, updated ${d.updated} holdings`);
+    const bucketLabel = { isa:'ISA', stocks:'Non-ISA Stocks', pension:'Pension', rsu:'RSU', custom:'Custom' }[d.bucket || bucket] || bucket;
+    toast(`✅ Imported ${d.added} new, updated ${d.updated} holdings into ${bucketLabel}`);
     closeModal('portfolio-import-modal');
     load();
   } catch(e) {
@@ -7640,11 +8177,22 @@ async function doAuth() {
       <button class="modal-close" onclick="closeModal('portfolio-import-modal')">✕</button>
     </div>
     <p style="color:var(--text2);font-size:13px;margin-bottom:10px;line-height:1.6">
-      Export from Trading 212: <strong>Portfolio → Export → CSV</strong><br>
+      <strong>Trading 212:</strong> Portfolio → History → Export → CSV (positions)<br>
       Also works with Freetrade, HL, and most broker exports.
     </p>
-    <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:14px">
-      <div style="font-size:12px;color:var(--teal)"><strong>✓ Active positions only</strong> — sold/closed holdings (0 shares) are automatically skipped</div>
+    <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--teal)">
+      <strong>✓ Active positions only</strong> — sold/closed holdings (0 shares) are automatically skipped
+    </div>
+    <!-- Bucket selector -->
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Import into bucket</label>
+      <select class="form-select" id="portfolio-import-bucket">
+        <option value="isa">📗 Stocks & Shares ISA (tax-free)</option>
+        <option value="stocks">📘 Non-ISA Stocks (CGT applies)</option>
+        <option value="pension">📙 Pension</option>
+        <option value="rsu">📒 RSU / Company Stock</option>
+        <option value="custom">📓 Custom Investments</option>
+      </select>
     </div>
     <label class="upload-zone">
       <input type="file" id="portfolio-file" accept=".csv">

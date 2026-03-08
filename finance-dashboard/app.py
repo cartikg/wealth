@@ -1058,6 +1058,9 @@ def import_portfolio():
     data = load_data()
     file = request.files.get('file')
     source_type = request.form.get('source', 'auto')  # 'auto', 't212', 'emma', 'generic'
+    target_bucket = request.form.get('bucket', 'isa')
+    if target_bucket not in ('isa', 'stocks', 'rsu', 'crypto', 'pension', 'custom'):
+        target_bucket = 'isa'
     if not file:
         return jsonify({'error': 'No file'}), 400
 
@@ -1145,22 +1148,24 @@ Return ONLY valid JSON array."""}]
 
         if not data.get('investments'):
             data['investments'] = {'isa': [], 'crypto': []}
+        if target_bucket not in data['investments']:
+            data['investments'][target_bucket] = []
 
         added = updated = skipped = 0
         for h in holdings:
             found = False
-            for i, existing in enumerate(data['investments']['isa']):
+            for i, existing in enumerate(data['investments'][target_bucket]):
                 if existing.get('ticker') == h.get('ticker'):
-                    data['investments']['isa'][i] = h
+                    data['investments'][target_bucket][i] = h
                     updated += 1
                     found = True
                     break
             if not found:
-                data['investments']['isa'].append(h)
+                data['investments'][target_bucket].append(h)
                 added += 1
 
         save_data(data)
-        return jsonify({'added': added, 'updated': updated, 'skipped': skipped, 'total': len(data['investments']['isa'])})
+        return jsonify({'added': added, 'updated': updated, 'skipped': skipped, 'total': len(data['investments'][target_bucket]), 'bucket': target_bucket})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
