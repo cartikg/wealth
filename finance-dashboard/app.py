@@ -42,7 +42,7 @@ def get_anthropic_client():
     return _anthropic_client
 
 # Auth guard + request logging
-AUTH_EXEMPT = {'/api/health', '/api/auth/status', '/api/auth/setup', '/api/auth/login'}
+AUTH_EXEMPT = {'/api/health', '/api/auth/status', '/api/auth/setup', '/api/auth/login', '/api/truelayer/callback'}
 
 @app.before_request
 def check_auth():
