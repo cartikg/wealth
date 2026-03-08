@@ -3488,13 +3488,24 @@ def tl_sync():
             # Fetch balance
             bal_data, bal_err = tl_get(conn, f'/data/v1/accounts/{acct_id}/balance')
             if bal_data:
-                balance = bal_data.get('results', [{}])[0].get('available', 0)
+                bal_result = bal_data.get('results', [{}])[0]
+                # Use 'current' (actual cash position) not 'available' which
+                # includes unused overdraft/credit limit — giving inflated figures
+                balance = bal_result.get('current', bal_result.get('available', 0))
+                overdraft = bal_result.get('overdraft', 0)
                 synced_accounts.append({
-                    'name':     acct_name,
-                    'bank':     conn['bank_name'],
-                    'balance':  balance,
-                    'currency': currency,
+                    'name':      acct_name,
+                    'bank':      conn['bank_name'],
+                    'balance':   balance,
+                    'overdraft': overdraft,
+                    'currency':  currency,
                 })
+                # Persist balance back to accounts store
+                for a in data.get('accounts', []):
+                    if a.get('id') == local_acct_id:
+                        a['balance']   = round(balance, 2)
+                        a['overdraft'] = round(overdraft, 2)
+                        break
             elif bal_err:
                 conn_errors.append(f'{acct_name} balance: {bal_err}')
 
