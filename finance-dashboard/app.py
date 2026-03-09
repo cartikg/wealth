@@ -655,7 +655,26 @@ def get_all_data():
     allowances = _calc_allowances(data, current_tax_year, profile)
 
     total_investments = total_crypto_gbp + total_isa_gbp + total_rsu_gbp + total_stocks_gbp + total_pension_gbp + total_custom_gbp
-    bank_balance = data.get('savings', 0)
+
+    # Compute bank balances from connected accounts (TrueLayer/Plaid)
+    connected_savings_current = 0
+    connected_credit_cards = 0
+    has_connected_accounts = False
+    for acc in data.get('accounts', []):
+        bal = float(acc.get('balance', 0))
+        is_connected = bool(acc.get('tl_account_id') or acc.get('pl_account_id'))
+        if bal == 0 and not is_connected:
+            continue  # skip offline accounts with no balance
+        acc_type = (acc.get('account_type', '') or '').lower()
+        if is_connected:
+            has_connected_accounts = True
+            if acc_type in ('credit_card', 'credit card', 'credit'):
+                connected_credit_cards += abs(bal)
+            else:
+                connected_savings_current += bal
+    manual_savings = float(data.get('savings', 0))
+    bank_balance = round(connected_savings_current + manual_savings, 2)
+    true_balance = round(bank_balance - connected_credit_cards, 2)
     
     # Property value: manual entry + property values from mortgages (original principal as proxy)
     manual_property = float(data.get('property_value', 0))
@@ -679,7 +698,8 @@ def get_all_data():
     structured_debts = mortgage_balances + detailed_debt_balances
     total_debts = structured_debts if structured_debts > 0 else manual_debts
     
-    net_worth = round(bank_balance + total_investments + property_value + other_assets - total_debts, 2)
+    # Use true_balance (savings/current minus credit cards) for net worth
+    net_worth = round(true_balance + total_investments + property_value + other_assets - total_debts, 2)
     net_worth_after_cgt = round(net_worth - cgt_liability, 2)
 
     # Spending calculation — exclude mortgage-related transactions if mortgages are tracked structurally
@@ -813,6 +833,11 @@ def get_all_data():
             'custom_gbp': round(total_custom_gbp, 2),
             'investments_gbp': round(total_investments, 2),
             'bank_balance': bank_balance,
+            'connected_savings_current': round(connected_savings_current, 2),
+            'connected_credit_cards': round(connected_credit_cards, 2),
+            'true_balance': true_balance,
+            'has_connected_accounts': has_connected_accounts,
+            'manual_savings': round(manual_savings, 2),
             'property_value': round(property_value, 2),
             'property_manual': round(manual_property, 2),
             'property_from_mortgages': round(mortgage_property_values, 2),
@@ -3906,12 +3931,19 @@ def plaid_sync():
         bal_data, bal_err = plaid_post('/accounts/balance/get', {'access_token': access_token})
         if bal_data:
             for a in bal_data.get('accounts', []):
+                balance = a.get('balances', {}).get('available', a.get('balances', {}).get('current', 0))
                 synced_accounts.append({
                     'name':     a.get('name', 'Account'),
                     'bank':     conn.get('institution_name', 'Plaid Bank'),
-                    'balance':  a.get('balances', {}).get('available', a.get('balances', {}).get('current', 0)),
+                    'balance':  balance,
                     'currency': a.get('balances', {}).get('iso_currency_code', 'USD'),
                 })
+                # Persist balance to local account store
+                local_acct_id = f"pl_{a['account_id'][:12]}"
+                for la in data.get('accounts', []):
+                    if la.get('id') == local_acct_id:
+                        la['balance'] = round(balance or 0, 2)
+                        break
 
         # Update cursor and last_synced
         conn['cursor']      = cursor

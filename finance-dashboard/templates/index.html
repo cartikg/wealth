@@ -572,10 +572,6 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       Receipts
     </div>
     <div class="nav-section">Tools</div>
-    <div class="nav-item" onclick="nav('banks',this)">
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/></svg>
-      Connect Banks
-    </div>
     <div class="nav-item" onclick="nav('retirement',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
       Retirement
@@ -990,10 +986,140 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
     <!-- ── ACCOUNTS ──────────────────────────────────────────────────────── -->
     <div id="section-accounts" class="section">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-        <button class="btn btn-gold btn-sm" onclick="openModal('account-modal',null)">+ Add Account</button>
+
+      <!-- True Balance Summary -->
+      <div id="accounts-balance-summary" class="card" style="margin-bottom:20px;border-left:3px solid var(--teal);display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">True Balance</div>
+            <div style="font-family:var(--font-display);font-size:28px;font-weight:600" id="accounts-true-balance" class="privacy-blur">£—</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Savings & Current minus Credit Cards</div>
+          </div>
+          <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Savings & Current</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--teal)" id="accounts-savings-current" class="privacy-blur">£—</div>
+            </div>
+            <div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Credit Cards</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--rose)" id="accounts-credit-cards" class="privacy-blur">£—</div>
+            </div>
+            <div>
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Manual Cash</div>
+              <div style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--gold)" id="accounts-manual-savings" class="privacy-blur">£—</div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px"></div>
+
+      <!-- Connected Banks Section -->
+      <div id="accounts-banks-section">
+        <!-- Config warning -->
+        <div id="tl-not-configured" class="card" style="display:none;border-color:rgba(59,130,246,0.3);margin-bottom:20px">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="font-size:28px">⚠️</div>
+            <div>
+              <div style="font-weight:600;font-size:15px;margin-bottom:6px">TrueLayer credentials not set</div>
+              <div style="color:var(--text3);font-size:13px;line-height:1.7">
+                To connect your bank accounts, you need a free TrueLayer developer account.<br>
+                <strong style="color:var(--text)">3-minute setup:</strong>
+              </div>
+              <ol style="color:var(--text2);font-size:13px;margin:10px 0 0 18px;line-height:2">
+                <li>Go to <a href="https://console.truelayer.com" target="_blank" style="color:var(--gold)">console.truelayer.com</a> → create free account</li>
+                <li>Create an app → copy your <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_id</code> and <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_secret</code></li>
+                <li>Add redirect URI: <code style="background:var(--surface2);padding:2px 8px;border-radius:4px;color:var(--teal)">http://localhost:5000/api/truelayer/callback</code></li>
+                <li>Restart the app with env vars set (see README)</li>
+              </ol>
+              <div style="margin-top:12px;background:var(--surface2);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--teal)">
+                export TRUELAYER_CLIENT_ID=your_client_id<br>
+                export TRUELAYER_CLIENT_SECRET=your_client_secret<br>
+                export TRUELAYER_ENV=sandbox<br>
+                python app.py
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action bar: env badge + sync + connect + add offline -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <span id="tl-env-badge" style="display:none;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px"></span>
+          <div style="flex:1"></div>
+          <button id="tl-sync-btn" class="btn btn-teal btn-sm" onclick="syncAllBanks()" style="display:none">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Sync All Banks
+          </button>
+          <button id="tl-connect-btn" class="btn btn-gold btn-sm" onclick="tlConnect()" style="display:none">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Connect Bank
+          </button>
+          <button id="plaid-connect-btn" class="btn btn-sm" onclick="plaidConnect()" style="display:none;background:rgba(0,220,127,0.12);color:#00dc7f;border:1px solid rgba(0,220,127,0.3)">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Connect via Plaid
+          </button>
+          <button class="btn btn-sm" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)" onclick="openModal('account-modal',null)">+ Add Offline Account</button>
+        </div>
+
+        <!-- Sync result banner -->
+        <div id="tl-sync-result" style="display:none;margin-bottom:16px"></div>
+
+        <!-- Connected banks grid -->
+        <div id="tl-connections-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:24px"></div>
+        <div id="plaid-connections-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:24px"></div>
+
+        <!-- Synced accounts balances -->
+        <div id="tl-accounts-section" style="display:none">
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:14px">Live Account Balances</div>
+          <div id="tl-accounts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px"></div>
+        </div>
+
+        <!-- How it works (shown when no connections) -->
+        <div id="tl-how-it-works" style="display:none">
+          <div class="card" style="max-width:640px;margin:0 auto">
+            <div style="text-align:center;padding:8px 0 20px">
+              <div style="font-size:48px;margin-bottom:12px">🏦</div>
+              <div style="font-family:var(--font-display);font-size:24px;font-weight:600;margin-bottom:8px">Connect Your Banks</div>
+              <div style="color:var(--text3);font-size:13px;line-height:1.7;max-width:420px;margin:0 auto">
+                Securely link Monzo, Revolut, Barclays, HSBC, NatWest and 40+ UK banks.<br>
+                Transactions sync automatically. Read-only access only.
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+              <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:24px;margin-bottom:6px">🔒</div>
+                <div style="font-size:12px;font-weight:600;margin-bottom:3px">Read-Only</div>
+                <div style="font-size:11px;color:var(--text3)">Cannot move money. View only.</div>
+              </div>
+              <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:24px;margin-bottom:6px">🏛️</div>
+                <div style="font-size:12px;font-weight:600;margin-bottom:3px">FCA Regulated</div>
+                <div style="font-size:11px;color:var(--text3)">TrueLayer is FCA authorised</div>
+              </div>
+              <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:24px;margin-bottom:6px">💸</div>
+                <div style="font-size:12px;font-weight:600;margin-bottom:3px">Free</div>
+                <div style="font-size:11px;color:var(--text3)">No cost for personal use</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:24px">
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟣 Monzo</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Revolut</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Barclays</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔴 HSBC</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟢 NatWest</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟠 Lloyds</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟢 Starling</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Santander</span>
+              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">+ 40 more</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Offline Accounts -->
+      <div style="margin-top:20px">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text2)" id="offline-accounts-label" style="display:none">Offline Accounts</div>
+        <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px"></div>
+      </div>
     </div>
 
     <!-- ── INVESTMENTS ───────────────────────────────────────────────────── -->
@@ -1663,110 +1789,6 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
               </tr></thead>
               <tbody id="analytics-items-tbody"></tbody>
             </table>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ── CONNECTED BANKS ─────────────────────────────────────────────── -->
-    <div id="section-banks" class="section">
-
-      <!-- Config warning -->
-      <div id="tl-not-configured" class="card" style="display:none;border-color:rgba(59,130,246,0.3);margin-bottom:20px">
-        <div style="display:flex;gap:16px;align-items:flex-start">
-          <div style="font-size:28px">⚠️</div>
-          <div>
-            <div style="font-weight:600;font-size:15px;margin-bottom:6px">TrueLayer credentials not set</div>
-            <div style="color:var(--text3);font-size:13px;line-height:1.7">
-              To connect your bank accounts, you need a free TrueLayer developer account.<br>
-              <strong style="color:var(--text)">3-minute setup:</strong>
-            </div>
-            <ol style="color:var(--text2);font-size:13px;margin:10px 0 0 18px;line-height:2">
-              <li>Go to <a href="https://console.truelayer.com" target="_blank" style="color:var(--gold)">console.truelayer.com</a> → create free account</li>
-              <li>Create an app → copy your <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_id</code> and <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_secret</code></li>
-              <li>Add redirect URI: <code style="background:var(--surface2);padding:2px 8px;border-radius:4px;color:var(--teal)">http://localhost:5000/api/truelayer/callback</code></li>
-              <li>Restart the app with env vars set (see README)</li>
-            </ol>
-            <div style="margin-top:12px;background:var(--surface2);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--teal)">
-              export TRUELAYER_CLIENT_ID=your_client_id<br>
-              export TRUELAYER_CLIENT_SECRET=your_client_secret<br>
-              export TRUELAYER_ENV=sandbox<br>
-              python app.py
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Env badge + sync button -->
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-        <span id="tl-env-badge" style="display:none;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px"></span>
-        <div style="flex:1"></div>
-        <button id="tl-sync-btn" class="btn btn-teal btn-sm" onclick="syncAllBanks()" style="display:none">
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          Sync All Banks
-        </button>
-        <button id="tl-connect-btn" class="btn btn-gold btn-sm" onclick="tlConnect()" style="display:none">
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-          Connect via TrueLayer
-        </button>
-        <button id="plaid-connect-btn" class="btn btn-sm" onclick="plaidConnect()" style="display:none;background:rgba(0,220,127,0.12);color:#00dc7f;border:1px solid rgba(0,220,127,0.3)">
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-          Connect via Plaid
-        </button>
-      </div>
-
-      <!-- Sync result banner -->
-      <div id="tl-sync-result" style="display:none;margin-bottom:16px"></div>
-
-      <!-- Connected banks grid (TrueLayer + Plaid) -->
-      <div id="tl-connections-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:24px"></div>
-      <div id="plaid-connections-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:24px"></div>
-
-      <!-- Synced accounts balances -->
-      <div id="tl-accounts-section" style="display:none">
-        <div style="font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:14px">Live Account Balances</div>
-        <div id="tl-accounts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px"></div>
-      </div>
-
-      <!-- How it works (shown when no connections) -->
-      <div id="tl-how-it-works" style="display:none">
-        <div class="card" style="max-width:640px;margin:0 auto">
-          <div style="text-align:center;padding:8px 0 20px">
-            <div style="font-size:48px;margin-bottom:12px">🏦</div>
-            <div style="font-family:var(--font-display);font-size:24px;font-weight:600;margin-bottom:8px">Connect Your Banks</div>
-            <div style="color:var(--text3);font-size:13px;line-height:1.7;max-width:420px;margin:0 auto">
-              Securely link Monzo, Revolut, Barclays, HSBC, NatWest and 40+ UK banks.<br>
-              Transactions sync automatically. Read-only access only.
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
-            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-              <div style="font-size:24px;margin-bottom:6px">🔒</div>
-              <div style="font-size:12px;font-weight:600;margin-bottom:3px">Read-Only</div>
-              <div style="font-size:11px;color:var(--text3)">Cannot move money. View only.</div>
-            </div>
-            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-              <div style="font-size:24px;margin-bottom:6px">🏛️</div>
-              <div style="font-size:12px;font-weight:600;margin-bottom:3px">FCA Regulated</div>
-              <div style="font-size:11px;color:var(--text3)">TrueLayer is FCA authorised</div>
-            </div>
-            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-              <div style="font-size:24px;margin-bottom:6px">💸</div>
-              <div style="font-size:12px;font-weight:600;margin-bottom:3px">Free</div>
-              <div style="font-size:11px;color:var(--text3)">No cost for personal use</div>
-            </div>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:24px">
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟣 Monzo</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Revolut</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Barclays</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔴 HSBC</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟢 NatWest</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟠 Lloyds</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟢 Starling</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Santander</span>
-            <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">+ 40 more</span>
           </div>
         </div>
       </div>
@@ -2670,7 +2692,7 @@ let editingTxnType = 'debit';
 const sectionTitles = {
   overview:'Overview', networth:'Net Worth', forecast:'12-Month Forecast', retirement:'Retirement Planner',
   transactions:'Transactions', accounts:'Accounts', investments:'Investments', mortgage:'Mortgage & Debt',
-  receipts:'Receipts', banks:'Connect Banks', tax:'Tax Strategy', estate:'Estate & Legacy',
+  receipts:'Receipts', tax:'Tax Strategy', estate:'Estate & Legacy',
   ai:'AI Advisor', settings:'Settings'
 };
 function nav(id, el) {
@@ -2827,7 +2849,7 @@ function renderOverview() {
   const t = D.totals;
   const nw = ovShowCGT ? t.net_worth_after_cgt : t.net_worth;
   set('ov-networth', fmtGBP(nw), sign(nw));
-  set('ov-cash', fmtGBP(t.bank_balance));
+  set('ov-cash', fmtGBP(t.true_balance != null ? t.true_balance : t.bank_balance));
   set('ov-investments', fmtGBP((t.investments_gbp||0) - (t.pension_gbp||0)));
   set('ov-pension', fmtGBP(t.pension_gbp||0));
   set('ov-property', fmtGBP(t.property_value));
@@ -2982,7 +3004,7 @@ function renderNetWorth() {
   set('nw-assets', fmtGBP(assets));
   set('nw-liabilities', fmtGBP(t.debts));
   set('nw-cgt-pill', fmtGBP(t.cgt_liability || 0));
-  set('nw-cash', fmtGBP(t.bank_balance));
+  set('nw-cash', fmtGBP(t.true_balance != null ? t.true_balance : t.bank_balance));
   set('nw-isa', fmtGBP(t.isa_gbp));
   set('nw-pension', fmtGBP(t.pension_gbp || 0));
   set('nw-rsu', fmtGBP(t.rsu_gbp || 0));
@@ -3230,35 +3252,63 @@ function renderAccounts() {
   const accMap = D.account_summary || {};
   const grid = document.getElementById('accounts-grid');
   const accounts = D.accounts || [];
-  if(!accounts.length) { grid.innerHTML='<div class="empty-state"><p>No accounts yet. Add your first account.</p></div>'; return; }
-  grid.innerHTML = accounts.map(a => {
-    const s = accMap[a.id] || { total_in:0, total_out:0, txn_count:0 };
-    const currencySymbol = a.currency==='INR'?'₹':a.currency==='USD'?'$':'£';
-    return `<div class="account-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div>
-          <div class="account-name">${maskAccount(a.name)}</div>
-          <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
+  const t = D.totals || {};
+
+  // True Balance summary card
+  const summaryEl = document.getElementById('accounts-balance-summary');
+  if (t.has_connected_accounts || t.manual_savings > 0) {
+    summaryEl.style.display = '';
+    const trueBalColor = t.true_balance >= 0 ? 'var(--teal)' : 'var(--rose)';
+    document.getElementById('accounts-true-balance').style.color = trueBalColor;
+    set('accounts-true-balance', fmtGBP(t.true_balance || 0));
+    set('accounts-savings-current', fmtGBP(t.connected_savings_current || 0));
+    set('accounts-credit-cards', t.connected_credit_cards > 0 ? '-' + fmtGBP(t.connected_credit_cards) : fmtGBP(0));
+    set('accounts-manual-savings', fmtGBP(t.manual_savings || 0));
+  } else {
+    summaryEl.style.display = 'none';
+  }
+
+  // Split connected vs offline accounts
+  const connected = accounts.filter(a => a.tl_account_id || a.pl_account_id);
+  const offline = accounts.filter(a => !a.tl_account_id && !a.pl_account_id);
+
+  // Show offline accounts label only if there are also connected accounts
+  const offlineLabel = document.getElementById('offline-accounts-label');
+  if (offlineLabel) offlineLabel.style.display = (connected.length > 0 && offline.length > 0) ? '' : 'none';
+
+  if(!offline.length) {
+    grid.innerHTML = '';
+  } else {
+    grid.innerHTML = offline.map(a => {
+      const s = accMap[a.id] || { total_in:0, total_out:0, txn_count:0 };
+      return `<div class="account-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div class="account-name">${maskAccount(a.name)}</div>
+            <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="action-btn" onclick="deleteAccountTxns('${a.id}','${esc(maskAccount(a.name))}')" title="Delete all transactions">🗑</button>
+            <button class="action-btn" onclick="deleteAccount('${a.id}')" title="Delete account">✕</button>
+          </div>
         </div>
-        <button class="action-btn" onclick="deleteAccountTxns('${a.id}','${esc(maskAccount(a.name))}')" title="Delete all transactions">🗑</button>
-        <button class="action-btn" onclick="deleteAccount('${a.id}')" title="Delete account">✕</button>
-      </div>
-      <div class="account-stats">
-        <div>
-          <div class="account-stat-label">Total In</div>
-          <div class="account-stat-value pos">${pv(fmtGBP(s.total_in))}</div>
+        <div class="account-stats">
+          <div>
+            <div class="account-stat-label">Total In</div>
+            <div class="account-stat-value pos">${pv(fmtGBP(s.total_in))}</div>
+          </div>
+          <div>
+            <div class="account-stat-label">Total Out</div>
+            <div class="account-stat-value neg">${pv(fmtGBP(s.total_out))}</div>
+          </div>
+          <div>
+            <div class="account-stat-label">Transactions</div>
+            <div class="account-stat-value">${s.txn_count}</div>
+          </div>
         </div>
-        <div>
-          <div class="account-stat-label">Total Out</div>
-          <div class="account-stat-value neg">${pv(fmtGBP(s.total_out))}</div>
-        </div>
-        <div>
-          <div class="account-stat-label">Transactions</div>
-          <div class="account-stat-value">${s.txn_count}</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+      </div>`;
+    }).join('');
+  }
 }
 
 // ── Investments ───────────────────────────────────────────────────────────────
@@ -6162,7 +6212,7 @@ async function bulkDeleteSelected() {
   bulkSelected.clear();
   updateBulkUI();
   toast('Holdings deleted ✓');
-  load();
+  await load();
 }
 
 // ── Phase 4: Mortgage & Debt Engine ──────────────────────────────────────────
@@ -6619,7 +6669,7 @@ async function bulkDeleteByAccount() {
   const d = await r.json();
   toast(`Deleted ${d.deleted} transactions from ${name}`);
   sel.value = '';
-  load();
+  await load();
 }
 
 // ── CSV ───────────────────────────────────────────────────────────────────────
@@ -6672,7 +6722,7 @@ async function deleteAccount(id) {
   if(!confirm('Delete this account?')) return;
   await fetch('/api/accounts/'+id, {method:'DELETE'});
   toast('Account removed');
-  load();
+  await load();
 }
 
 async function deleteAccountTxns(accId, accName) {
@@ -6680,7 +6730,7 @@ async function deleteAccountTxns(accId, accName) {
   const r = await fetch(`/api/accounts/${accId}/transactions`, {method:'DELETE'});
   const d = await r.json();
   toast(`Deleted ${d.deleted} transactions from ${accName}`);
-  load();
+  await load();
 }
 
 // ── Investments ───────────────────────────────────────────────────────────────
