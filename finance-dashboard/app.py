@@ -111,7 +111,7 @@ def auth_login():
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 
-DATA_FILE = os.path.join(_APP_DIR, 'data.json')
+DATA_FILE = os.environ.get('WEALTH_DATA_FILE', os.path.join(_APP_DIR, 'data.json'))
 
 CATEGORIES = [
     'Food & Dining', 'Shopping', 'Transport', 'Entertainment',

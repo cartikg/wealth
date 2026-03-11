@@ -6632,7 +6632,7 @@ async function bulkDeleteTxns() {
   const ids = [...txnSelected];
   await fetch('/api/transactions/bulk-delete', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
     body: JSON.stringify({ ids })
   });
   txnSelected.clear();
@@ -6676,7 +6676,7 @@ async function bulkDeleteAccounts() {
   const ids = [...accSelected];
   await fetch('/api/accounts/bulk-delete', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
     body: JSON.stringify({ ids })
   });
   accSelected.clear();
@@ -8557,7 +8557,7 @@ let _t212Connections = [];
 
 async function loadT212Status() {
   try {
-    const r = await fetch('/api/t212/status', { headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') } });
+    const r = await fetch('/api/t212/status', { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') } });
     const d = await r.json();
     _t212Connections = d.connections || [];
     _renderT212Connections();
@@ -8643,7 +8643,7 @@ async function _t212ShowTestResult(elId, bodyObj) {
   try {
     const r = await fetch('/api/t212/test', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
       body: JSON.stringify(bodyObj)
     });
     const d = await r.json();
@@ -8680,7 +8680,7 @@ async function t212SaveNewConnection() {
   if (!secret) { toast('Enter API Secret', 'error'); return; }
   const r = await fetch('/api/t212/connections', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
     body: JSON.stringify({ name, api_key: key, api_secret: secret, mode, bucket })
   });
   const d = await r.json();
@@ -8699,7 +8699,7 @@ async function t212SyncById(id) {
   try {
     const r = await fetch('/api/t212/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
       body: JSON.stringify({ id })
     });
     const d = await r.json();
@@ -8725,7 +8725,7 @@ async function t212SyncAll() {
   try {
     const r = await fetch('/api/t212/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
       body: JSON.stringify({})
     });
     const d = await r.json();
@@ -8750,7 +8750,7 @@ async function t212ChangeBucket(id, newBucket, name) {
   if (!confirm(`Switch "${name}" to sync into the ${label} bucket?\nExisting synced holdings in the old bucket are kept — only new syncs will go to ${label}.`)) return;
   await fetch(`/api/t212/connections/${id}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
     body: JSON.stringify({ bucket: newBucket })
   });
   toast(`Switched to ${label} bucket ✓`);
@@ -8762,7 +8762,7 @@ async function t212RenameConnection(id, currentName) {
   if (!name || name.trim() === currentName) return;
   await fetch(`/api/t212/connections/${id}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
     body: JSON.stringify({ name: name.trim() })
   });
   await loadT212Status();
@@ -8772,7 +8772,7 @@ async function t212DeleteConnection(id, name) {
   if (!confirm(`Remove "${name}" from your connected accounts? This won't delete any synced holdings.`)) return;
   await fetch(`/api/t212/connections/${id}`, {
     method: 'DELETE',
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
   });
   toast(`${name} removed`);
   await loadT212Status();
@@ -8822,7 +8822,7 @@ async function loadT212LiveSummary() {
 
   try {
     const r = await fetch('/api/t212/live-summary', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
     });
     const d = await r.json();
     if (!content) return;
@@ -8904,7 +8904,7 @@ async function renderEventsCalendar() {
   if (!el) return;
   try {
     const r = await fetch('/api/calendar', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
     });
     const d = await r.json();
     const events = d.events || [];
@@ -8986,8 +8986,8 @@ async function renderIntelligence() {
 
   try {
     const [scores, research] = await Promise.all([
-      fetch('/api/scores', {headers:{Authorization:'Bearer '+localStorage.getItem('auth_token')}}).then(r=>r.json()),
-      fetch('/api/research-data', {headers:{Authorization:'Bearer '+localStorage.getItem('auth_token')}}).then(r=>r.json()),
+      fetch('/api/scores', {headers:{Authorization:'Bearer '+sessionStorage.getItem('wealth_token')}}).then(r=>r.json()),
+      fetch('/api/research-data', {headers:{Authorization:'Bearer '+sessionStorage.getItem('wealth_token')}}).then(r=>r.json()),
     ]);
     SI.scores = Array.isArray(scores) ? scores : [];
     SI.research = research || {};
@@ -9195,7 +9195,7 @@ async function siFetchLive() {
   try {
     const res = await fetch(`/api/research-data/${ticker}/fetch?force=true`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Fetch failed');
@@ -9239,14 +9239,14 @@ async function siSaveResearch() {
   try {
     await fetch(`/api/research-data/${ticker}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
       body: JSON.stringify(payload)
     });
     const addWatch = document.getElementById('si-form-watchlist').checked;
     if (addWatch) {
       await fetch(`/api/watchlist/${ticker}`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+        headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
       });
     }
     document.getElementById('si-research-modal').style.display = 'none';
@@ -9261,7 +9261,7 @@ async function siDeleteTicker(ticker) {
   if (!confirm(`Remove ${ticker} from Stock Intelligence?`)) return;
   await fetch(`/api/research-data/${ticker}`, {
     method: 'DELETE',
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
   });
   toast(`${ticker} removed`);
   renderIntelligence();
@@ -9285,7 +9285,7 @@ async function siOpenPanel(ticker) {
     // Fetch latest data for this ticker
     const res = await fetch(`/api/research-data/${ticker}/fetch`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Fetch failed');
@@ -9480,7 +9480,7 @@ async function siLoadRecommendations() {
 
   try {
     const res = await fetch('/api/ai-recommendations', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
     });
     const recs = await res.json();
     if (!res.ok) throw new Error(recs.error || 'AI error');
@@ -9519,7 +9519,7 @@ async function siRefreshAll() {
     try {
       await fetch(`/api/research-data/${ticker}/fetch?force=true`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+        headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
       });
     } catch(e) { /* continue */ }
   }

@@ -6,7 +6,7 @@ import os
 import secrets
 import time
 
-AUTH_FILE = os.path.join(os.path.dirname(__file__), 'auth_config.json')
+AUTH_FILE = os.environ.get('WEALTH_AUTH_FILE', os.path.join(os.path.dirname(__file__), 'auth_config.json'))
 JWT_SECRET_KEY = 'JWT_SECRET'
 TOKEN_EXPIRY_DAYS = 30
 
