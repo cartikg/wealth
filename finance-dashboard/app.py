@@ -4015,6 +4015,110 @@ def t212_delete_connection(conn_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/t212/live-summary', methods=['GET'])
+def t212_live_summary():
+    """Return live cash balances and open orders for all enabled T212 connections."""
+    data  = load_data()
+    conns = [c for c in data.get('t212_connections', []) if c.get('enabled', True)]
+    if not conns:
+        return jsonify({'connections': []})
+
+    results = []
+    for conn in conns:
+        api_key    = conn['api_key']
+        api_secret = conn['api_secret']
+        mode       = conn.get('mode', 'live')
+        row = {
+            'id':     conn['id'],
+            'name':   conn.get('name', 'Account'),
+            'mode':   mode,
+            'bucket': conn.get('bucket', 'isa'),
+        }
+
+        cash_data, cash_err = t212_get('/equity/account/cash', api_key, mode, api_secret=api_secret)
+        if cash_err:
+            row['cash_error'] = cash_err
+        else:
+            row['cash'] = {
+                'free':     round(float(cash_data.get('free',     0)), 2),
+                'blocked':  round(float(cash_data.get('blocked',  0)), 2),
+                'invested': round(float(cash_data.get('invested', 0)), 2),
+                'ppl':      round(float(cash_data.get('ppl',      0)), 2),
+                'total':    round(float(cash_data.get('total',    0)), 2),
+            }
+
+        orders_raw, orders_err = t212_get('/equity/orders', api_key, mode, api_secret=api_secret)
+        if not orders_err:
+            orders_list = orders_raw if isinstance(orders_raw, list) else (orders_raw or {}).get('items', [])
+            row['orders'] = [
+                {
+                    'id':           o.get('id'),
+                    'ticker':       t212_strip_ticker(o.get('ticker', '')),
+                    'type':         o.get('type', ''),
+                    'side':         o.get('side', ''),
+                    'quantity':     o.get('quantity', 0),
+                    'limitPrice':   o.get('limitPrice'),
+                    'stopPrice':    o.get('stopPrice'),
+                    'status':       o.get('status', ''),
+                    'creationTime': (o.get('creationTime') or '')[:10],
+                }
+                for o in (orders_list or [])[:20]
+            ]
+        else:
+            row['orders']       = []
+            row['orders_error'] = orders_err
+
+        results.append(row)
+
+    return jsonify({'connections': results})
+
+
+@app.route('/api/calendar', methods=['GET'])
+def investment_calendar():
+    """Upcoming earnings dates and ex-dividend dates for held tickers."""
+    data = load_data()
+    rd   = data.get('research_data', {})
+    inv  = data.get('investments', {})
+
+    # Collect all held tickers
+    held = set()
+    for bucket in ('isa', 'stocks', 'rsu', 'pension', 'custom'):
+        for h in inv.get(bucket, []):
+            tk = (h.get('ticker') or '').upper()
+            if tk:
+                held.add(tk)
+    for h in inv.get('crypto', []):
+        tk = (h.get('coin_id') or h.get('ticker') or '').upper()
+        if tk:
+            held.add(tk)
+
+    today  = date.today().isoformat()
+    events = []
+    for ticker, r in rd.items():
+        if ticker not in held:
+            continue
+        ne = r.get('next_earnings')
+        if ne and ne >= today:
+            events.append({
+                'date':   ne,
+                'type':   'earnings',
+                'ticker': ticker,
+                'name':   r.get('name', ticker),
+            })
+        xd = r.get('ex_dividend_date')
+        if xd and xd >= today:
+            events.append({
+                'date':      xd,
+                'type':      'dividend',
+                'ticker':    ticker,
+                'name':      r.get('name', ticker),
+                'div_yield': r.get('div_yield'),
+            })
+
+    events.sort(key=lambda e: e['date'])
+    return jsonify({'events': events[:60]})
+
+
 # ─── Plaid Banking Integration ────────────────────────────────────────────────
 #
 # Plaid supports US, UK, and EU banks (Chase, Wells Fargo, BofA, etc.)
@@ -5379,6 +5483,16 @@ def fetch_and_cache_ticker(ticker, force=False):
     except Exception:
         pass
 
+    # --- Ex-dividend date ---
+    ex_div = None
+    try:
+        ex_div_ts = info.get('exDividendDate')
+        if ex_div_ts:
+            from datetime import datetime as _dt
+            ex_div = _dt.utcfromtimestamp(int(ex_div_ts)).strftime('%Y-%m-%d')
+    except Exception:
+        pass
+
     # --- Historical CAGR from price history ---
     cagr_1yr = cagr_3yr = cagr_5yr = cagr_10yr = None
     alpha_1yr = alpha_5yr = None
@@ -5544,6 +5658,7 @@ def fetch_and_cache_ticker(ticker, force=False):
         'ret_3m': ret_3m,
         'ret_ytd': ret_ytd,
         'next_earnings': existing.get('next_earnings') if not next_earnings else next_earnings,
+        'ex_dividend_date': ex_div or existing.get('ex_dividend_date'),
         'earnings_volatility': earnings_volatility,
         'eps_estimate': eps_estimate,
         'prev_eps': prev_eps,

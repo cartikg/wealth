@@ -1181,6 +1181,48 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         </div>
       </div>
 
+      <!-- ── Portfolio KPI Strip ──────────────────────────────────── -->
+      <div id="portfolio-kpi-strip" style="display:none;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Portfolio Value</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-value" class="privacy-blur">£—</div>
+            <div style="font-size:10px;color:var(--text3)" id="pkpi-invested" class="privacy-blur">£— invested</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Total Return</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-gain" class="privacy-blur">£—</div>
+            <div style="font-size:10px" id="pkpi-gain-pct" class="privacy-blur">—%</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Annual Income</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-income" class="privacy-blur">£—</div>
+            <div style="font-size:10px;color:var(--text3)" id="pkpi-yield">—% yield/yr</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Holdings</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-holdings">—</div>
+            <div style="font-size:10px;color:var(--text3)">across all buckets</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── T212 Live Summary ─────────────────────────────────────────── -->
+      <div id="t212-live-card" style="display:none;margin-bottom:16px">
+        <div class="card" style="border-color:rgba(59,130,246,0.2);padding:0;overflow:hidden">
+          <div style="padding:11px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
+            <div>
+              <span style="font-size:13px;font-weight:500">📊 T212 Live</span>
+              <span style="font-size:11px;color:var(--text3);margin-left:8px">Cash · P&amp;L · Open orders</span>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="loadT212LiveSummary()">↻ Refresh</button>
+          </div>
+          <div id="t212-live-content" style="padding:14px">
+            <div style="text-align:center;color:var(--text3);font-size:12px;padding:8px 0">Click Refresh to load live data from Trading 212</div>
+          </div>
+        </div>
+      </div>
+
       <!-- CAGR Projector -->
       <div class="card" style="margin-bottom:16px;border-color:rgba(59,130,246,0.2)">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
@@ -1347,6 +1389,17 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div class="card-label" style="margin-bottom:12px">💷 Dividend Income</div>
         <div class="grid-3" id="dividend-summary-cards" style="margin-bottom:12px"></div>
         <div id="dividend-calendar" style="font-size:12px"></div>
+      </div>
+
+      <!-- ── Events Calendar ───────────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:16px;display:none" id="events-calendar-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-label">📅 Upcoming Events</div>
+          <div style="font-size:11px;color:var(--text3)">Earnings &amp; ex-dividends for held stocks</div>
+        </div>
+        <div id="events-calendar-content">
+          <div style="text-align:center;color:var(--text3);font-size:12px;padding:8px">Loading…</div>
+        </div>
       </div>
 
       <!-- Bulk operations bar -->
@@ -3696,7 +3749,9 @@ function renderInvestments() {
   renderCAGR();
   renderAllocation();
   renderPortfolioAnalytics();
+  renderPortfolioKPIStrip();
   renderDividendSummary();
+  renderEventsCalendar();
   renderDisposals();
   renderIncomeTax();
   renderAllowances();
@@ -8520,9 +8575,11 @@ function _renderT212Connections() {
   const settBtn = document.getElementById('t212-sync-all-btn-settings');
   const hasConns = _t212Connections.length > 0;
 
-  // Show/hide Sync All buttons
+  // Show/hide Sync All buttons + T212 live card
   if (invBtn)  invBtn.style.display  = hasConns ? 'flex' : 'none';
   if (settBtn) settBtn.style.display = hasConns ? ''     : 'none';
+  const liveCard = document.getElementById('t212-live-card');
+  if (liveCard) liveCard.style.display = hasConns ? '' : 'none';
 
   // Update last synced in investments header
   const latestSync = _t212Connections.reduce((max, c) => {
@@ -8715,6 +8772,182 @@ async function t212DeleteConnection(id, name) {
   });
   toast(`${name} removed`);
   await loadT212Status();
+}
+
+// ── Portfolio KPI Strip ────────────────────────────────────────────────────
+
+function renderPortfolioKPIStrip() {
+  const el = document.getElementById('portfolio-kpi-strip');
+  if (!el || !D || !D.investments) return;
+  const all = (typeof _paAllHoldings === 'function') ? _paAllHoldings() : (_paHoldings || []);
+  if (!all.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+
+  const t             = D.totals || {};
+  const totalVal      = t.investments_gbp || 0;
+  const totalInvested = all.reduce((s, h) => s + h.invested, 0);
+  const totalGain     = all.reduce((s, h) => s + h.gain, 0);
+  const gainPct       = totalInvested > 0 ? (totalGain / totalInvested * 100) : 0;
+  const projIncome    = all.reduce((s, h) => s + h.projDivIncome, 0);
+  const yieldPct      = totalVal > 0 ? (projIncome / totalVal * 100) : 0;
+  const gainC         = totalGain >= 0 ? 'var(--teal)' : 'var(--rose)';
+
+  const pkv  = document.getElementById('pkpi-value');
+  const pkg  = document.getElementById('pkpi-gain');
+  const pkgp = document.getElementById('pkpi-gain-pct');
+  const pki  = document.getElementById('pkpi-income');
+  if (pkv)  pkv.innerHTML  = `<span class="pv">${fmtGBP(totalVal)}</span>`;
+  set('pkpi-invested', fmtGBP(totalInvested) + ' invested');
+  if (pkg)  { pkg.innerHTML  = `<span class="pv" style="color:${gainC}">${totalGain>=0?'+':''}${fmtGBP(totalGain)}</span>`; }
+  if (pkgp) { pkgp.textContent = `${gainPct>=0?'+':''}${gainPct.toFixed(1)}%`; pkgp.style.color = gainC; }
+  if (pki)  pki.innerHTML  = `<span class="pv">${fmtGBP(projIncome)}</span>`;
+  set('pkpi-yield',    yieldPct.toFixed(2) + '% yield/yr');
+  set('pkpi-holdings', all.length);
+}
+
+// ── T212 Live Summary ──────────────────────────────────────────────────────
+
+async function loadT212LiveSummary() {
+  const liveCard = document.getElementById('t212-live-card');
+  if (!liveCard) return;
+  if (!_t212Connections || !_t212Connections.length) { liveCard.style.display = 'none'; return; }
+  liveCard.style.display = '';
+
+  const content = document.getElementById('t212-live-content');
+  if (content) content.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:12px 0">Loading live data…</div>';
+
+  try {
+    const r = await fetch('/api/t212/live-summary', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    });
+    const d = await r.json();
+    if (!content) return;
+    if (!d.connections || !d.connections.length) {
+      content.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:8px">No accounts configured</div>';
+      return;
+    }
+
+    let html = '';
+    for (const conn of d.connections) {
+      const bucketLabel = (conn.bucket || 'isa') === 'isa' ? 'ISA' : 'Invest';
+      const modeLabel   = conn.mode === 'demo' ? '🔵 Demo' : '🟢 Live';
+      html += `<div style="margin-bottom:12px;padding:12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:13px;font-weight:500">${conn.name}</span>
+        <span style="font-size:10px;color:var(--text3)">${bucketLabel} · ${modeLabel}</span>
+      </div>`;
+
+      if (conn.cash_error) {
+        html += `<div style="font-size:12px;color:var(--rose);padding:4px 0">${conn.cash_error}</div>`;
+      } else if (conn.cash) {
+        const c = conn.cash;
+        const pplC = c.ppl >= 0 ? 'var(--teal)' : 'var(--rose)';
+        const pplSign = c.ppl >= 0 ? '+' : '';
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:10px">
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">Cash Available</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px" class="privacy-blur">£${c.free.toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">Invested</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px" class="privacy-blur">£${c.invested.toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">Unrealised P&amp;L</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px;color:${pplC}" class="privacy-blur">${pplSign}£${Math.abs(c.ppl).toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">In Orders</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px" class="privacy-blur">£${c.blocked.toFixed(2)}</div>
+          </div>
+        </div>`;
+      }
+
+      if (conn.orders && conn.orders.length > 0) {
+        html += `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:500">Open Orders (${conn.orders.length})</div>
+        <div style="display:flex;flex-direction:column;gap:4px">`;
+        for (const o of conn.orders) {
+          const sideC = o.side === 'BUY' ? 'var(--teal)' : 'var(--rose)';
+          const price = o.limitPrice ?? o.stopPrice ?? null;
+          const pType = o.limitPrice != null ? 'LIMIT' : o.stopPrice != null ? 'STOP' : o.type;
+          html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--surface);border-radius:6px;font-size:11px">
+            <span style="color:${sideC};font-weight:600;min-width:34px">${o.side}</span>
+            <span style="font-weight:500">${o.ticker}</span>
+            <span style="color:var(--text3)">${o.quantity}×</span>
+            ${price != null ? `<span>@ £${parseFloat(price).toFixed(2)}</span>` : ''}
+            <span style="color:var(--text3);font-size:10px;background:var(--surface2);padding:1px 5px;border-radius:4px">${pType}</span>
+            <span style="color:var(--text3);margin-left:auto;font-size:10px">${o.creationTime || ''}</span>
+          </div>`;
+        }
+        html += `</div>`;
+      } else if (!conn.cash_error) {
+        html += `<div style="font-size:11px;color:var(--text3);margin-top:2px">No open orders</div>`;
+      }
+
+      html += `</div>`;
+    }
+    content.innerHTML = html;
+  } catch(e) {
+    if (content) content.innerHTML = `<div style="font-size:12px;color:var(--rose);padding:8px">Error: ${e.message}</div>`;
+  }
+}
+
+// ── Events Calendar ────────────────────────────────────────────────────────
+
+async function renderEventsCalendar() {
+  const el   = document.getElementById('events-calendar-content');
+  const card = document.getElementById('events-calendar-card');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/calendar', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    });
+    const d = await r.json();
+    const events = d.events || [];
+
+    if (!events.length) { if (card) card.style.display = 'none'; return; }
+    if (card) card.style.display = '';
+
+    // Group by YYYY-MM
+    const byMonth = {};
+    for (const ev of events) {
+      const m = ev.date.slice(0, 7);
+      (byMonth[m] = byMonth[m] || []).push(ev);
+    }
+
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let html = '<div style="display:flex;flex-direction:column;gap:14px">';
+    for (const [month, evts] of Object.entries(byMonth)) {
+      const [y, m] = month.split('-');
+      html += `<div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">${MON[parseInt(m)-1]} ${y}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">`;
+      for (const ev of evts) {
+        const day = ev.date.slice(8);
+        const isE = ev.type === 'earnings';
+        const col = isE ? '#F59E0B' : 'var(--teal)';
+        const bg  = isE ? 'rgba(245,158,11,0.1)' : 'rgba(20,184,166,0.1)';
+        const bdr = isE ? 'rgba(245,158,11,0.3)'  : 'rgba(20,184,166,0.3)';
+        const ico = isE ? '📢' : '💷';
+        const shortName = ev.name !== ev.ticker ? ev.name.split(' ').slice(0,2).join(' ') : '';
+        const yieldStr  = (!isE && ev.div_yield) ? `<span style="color:var(--text3);font-size:10px;margin-left:2px">${(ev.div_yield*100).toFixed(1)}% yield</span>` : '';
+        html += `<div style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:${bg};border:1px solid ${bdr};border-radius:8px;font-size:11px">
+          <span>${ico}</span>
+          <span style="color:var(--text3);font-size:10px;min-width:20px;text-align:center">${day}</span>
+          <span style="font-weight:500">${ev.ticker}</span>
+          ${shortName ? `<span style="color:var(--text3);font-size:10px">${shortName}</span>` : ''}
+          <span style="color:${col};font-size:10px;font-weight:500">${isE ? 'Earnings' : 'Ex-Div'}</span>
+          ${yieldStr}
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px">Calendar unavailable — add tickers to Stock Intelligence to enable</div>';
+    if (card) card.style.display = 'none';
+  }
 }
 
 // ── Stock Intelligence ─────────────────────────────────────────────────────
