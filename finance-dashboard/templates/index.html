@@ -2615,6 +2615,16 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
             </div>
           </div>
 
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            <span class="form-label" style="margin:0">Account type</span>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-bucket" value="isa" checked> Stocks &amp; Shares ISA
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-bucket" value="stocks"> Invest (non-ISA)
+            </label>
+          </div>
+
           <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
             <span class="form-label" style="margin:0">Mode</span>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
@@ -8533,17 +8543,23 @@ function _renderT212Connections() {
     const modeBadge = c.mode === 'demo'
       ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.25);font-weight:600">DEMO</span>`
       : `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(20,184,166,0.12);color:var(--teal);border:1px solid rgba(20,184,166,0.3);font-weight:600">LIVE</span>`;
+    const bucketLabel = (c.bucket || 'isa') === 'isa' ? 'ISA' : 'Invest';
+    const bucketColor = (c.bucket || 'isa') === 'isa' ? 'var(--gold)' : 'var(--lavender)';
+    const bucketBadge = `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(245,158,11,0.1);color:${bucketColor};border:1px solid rgba(245,158,11,0.2);font-weight:600">${bucketLabel}</span>`;
+    const toggleBucket = (c.bucket || 'isa') === 'isa' ? 'stocks' : 'isa';
+    const toggleLabel  = (c.bucket || 'isa') === 'isa' ? 'Switch to Invest' : 'Switch to ISA';
     return `
     <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface2)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div>
-          <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:3px">${c.name} ${modeBadge}</div>
+          <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:3px">${c.name} ${modeBadge} ${bucketBadge}</div>
           <div style="font-size:11px;color:var(--text3)">${_fmtSynced(c.last_synced)}</div>
           <div id="t212-row-result-${c.id}" style="display:none;font-size:11px;margin-top:4px;padding:4px 8px;border-radius:6px;border:1px solid transparent"></div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212TestById('${c.id}')">Test</button>
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212SyncById('${c.id}')">Sync</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212ChangeBucket('${c.id}','${toggleBucket}','${c.name.replace(/'/g,"\\'")}')">${toggleLabel}</button>
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212RenameConnection('${c.id}','${c.name.replace(/'/g,"\\'")}')">Rename</button>
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:var(--rose)" onclick="t212DeleteConnection('${c.id}','${c.name.replace(/'/g,"\\'")}')">Remove</button>
         </div>
@@ -8602,12 +8618,13 @@ async function t212SaveNewConnection() {
   const key    = document.getElementById('t212-new-key')?.value?.trim();
   const secret = document.getElementById('t212-new-secret')?.value?.trim();
   const mode   = document.querySelector('input[name="t212-new-mode"]:checked')?.value || 'live';
+  const bucket = document.querySelector('input[name="t212-new-bucket"]:checked')?.value || 'isa';
   if (!key)    { toast('Enter API Key', 'error'); return; }
   if (!secret) { toast('Enter API Secret', 'error'); return; }
   const r = await fetch('/api/t212/connections', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
-    body: JSON.stringify({ name, api_key: key, api_secret: secret, mode })
+    body: JSON.stringify({ name, api_key: key, api_secret: secret, mode, bucket })
   });
   const d = await r.json();
   if (d.error) { toast('Error: ' + d.error, 'error'); return; }
@@ -8665,6 +8682,18 @@ async function t212SyncAll() {
     btnIds.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = false; b.style.opacity = ''; } });
     if (invBtn) invBtn.innerHTML = staticIcon + ' Sync T212';
   }
+}
+
+async function t212ChangeBucket(id, newBucket, name) {
+  const label = newBucket === 'isa' ? 'ISA' : 'Invest (non-ISA)';
+  if (!confirm(`Switch "${name}" to sync into the ${label} bucket?\nExisting synced holdings in the old bucket are kept — only new syncs will go to ${label}.`)) return;
+  await fetch(`/api/t212/connections/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    body: JSON.stringify({ bucket: newBucket })
+  });
+  toast(`Switched to ${label} bucket ✓`);
+  await loadT212Status();
 }
 
 async function t212RenameConnection(id, currentName) {

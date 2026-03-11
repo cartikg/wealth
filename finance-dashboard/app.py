@@ -263,11 +263,16 @@ def migrate_data(data):
                 'api_key':     existing_key,
                 'api_secret':  existing_secret,
                 'mode':        gs.get('t212_mode', 'live'),
+                'bucket':      'isa',
                 'last_synced': gs.get('t212_last_synced'),
                 'enabled':     True,
             }]
         else:
             data['t212_connections'] = []
+    # Ensure all connections have a bucket field (backfill for connections created before this field existed)
+    for c in data.get('t212_connections', []):
+        if 'bucket' not in c:
+            c['bucket'] = 'isa'
 
     return data
 
@@ -3763,6 +3768,7 @@ def t212_status():
                 'id':          c['id'],
                 'name':        c.get('name', 'Account'),
                 'mode':        c.get('mode', 'live'),
+                'bucket':      c.get('bucket', 'isa'),
                 'last_synced': c.get('last_synced'),
                 'enabled':     c.get('enabled', True),
             }
@@ -3814,8 +3820,8 @@ def _t212_sync_one(conn, inv, data):
             continue
 
         ticker  = t212_strip_ticker(t212_ticker)
-        # T212 frontend field: 'ISA' → isa bucket, everything else → stocks
-        bucket  = 'isa' if pos.get('frontend') == 'ISA' else 'stocks'
+        # Use the connection-level bucket (set when the account is added in Settings)
+        bucket  = conn.get('bucket', 'isa')
 
         quantity  = float(pos.get('quantity', 0))
         avg_price = float(pos.get('averagePrice', 0))
@@ -3966,6 +3972,9 @@ def t212_add_connection():
     api_secret = body.get('api_secret', '').strip()
     name       = (body.get('name') or 'Account').strip()
     mode       = body.get('mode', 'live')
+    bucket     = body.get('bucket', 'isa')
+    if bucket not in ('isa', 'stocks'):
+        bucket = 'isa'
     if not api_key or not api_secret:
         return jsonify({'error': 'API Key and Secret required'}), 400
     data = load_data()
@@ -3975,6 +3984,7 @@ def t212_add_connection():
         'api_key':     api_key,
         'api_secret':  api_secret,
         'mode':        mode,
+        'bucket':      bucket,
         'last_synced': None,
         'enabled':     True,
     }
@@ -3990,7 +4000,7 @@ def t212_update_connection(conn_id):
     conn = next((c for c in data.get('t212_connections', []) if c['id'] == conn_id), None)
     if not conn:
         return jsonify({'error': 'Connection not found'}), 404
-    for field in ['name', 'mode', 'enabled']:
+    for field in ['name', 'mode', 'bucket', 'enabled']:
         if field in body:
             conn[field] = body[field]
     save_data(data)
