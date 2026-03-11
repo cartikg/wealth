@@ -527,16 +527,61 @@ def health_check():
 def index():
     return render_template('index.html')
 
+def _fast_price(ticker, holding, rd, rates):
+    """Return the best available price for a holding WITHOUT any live HTTP call.
+    Priority: research_data cache → current_price stored on holding → manual_price → avg_price.
+    The research_data cache is populated by the background yfinance refresh and T212 sync.
+    """
+    tk = (ticker or '').upper()
+    cached = rd.get(tk, {}) if tk else {}
+    price = (cached.get('current_price') or
+             holding.get('current_price') or
+             holding.get('manual_price') or
+             holding.get('avg_price', 0))
+    return float(price or 0)
+
+
 @app.route('/api/data', methods=['GET'])
 def get_all_data():
   try:
     data = load_data()
     rates = get_exchange_rates()
     today = datetime.now().strftime('%Y-%m-%d')
+    # Research data cache — used by _fast_price for instant price lookups
+    rd = data.get('research_data', {})
 
     # Auto-snapshot net worth monthly
     _auto_snapshot_if_needed(data, rates)
+
+    # ── Auto-register any held tickers that lack a research_data entry ────────
+    # This ensures the background yfinance refresh will pick up ALL holdings,
+    # not just ones explicitly added through Stock Intelligence.
+    new_stubs = []
+    for bucket in ('isa', 'stocks', 'rsu'):
+        for h in data.get('investments', {}).get(bucket, []):
+            tk = (h.get('ticker') or '').upper()
+            if tk and tk not in rd:
+                rd[tk] = {
+                    'ticker':        tk,
+                    'name':          h.get('name', tk),
+                    'current_price': h.get('current_price', h.get('avg_price', 0)),
+                    'currency':      h.get('currency', 'GBP'),
+                    'sector':        h.get('sector', ''),
+                    'updated':       None,  # forces yfinance fetch
+                }
+                new_stubs.append(tk)
+
     save_data(data)
+
+    # Kick off background yfinance refresh for any newly registered tickers
+    if new_stubs:
+        def _bg(tickers):
+            for tk in tickers:
+                try:
+                    fetch_and_cache_ticker(tk, force=False)
+                except Exception as e:
+                    print(f'[api/data bg] {tk}: {e}')
+        threading.Thread(target=_bg, args=(new_stubs,), daemon=True).start()
 
     transactions = []
     has_structured_mortgages = len(data.get('mortgages', [])) > 0
@@ -585,9 +630,7 @@ def get_all_data():
     isa_valued = []
     total_isa_gbp = 0
     for s in isa:
-        price = get_stock_price_gbp(s['ticker'], rates) if s.get('ticker') else None
-        if price is None:
-            price = s.get('current_price', s.get('manual_price', 0))
+        price = _fast_price(s.get('ticker'), s, rd, rates)
         value = round(s['shares'] * price, 2) if s.get('shares') else s.get('current_value', 0)
         total_isa_gbp += value
         invested = s.get('invested', s.get('cost_basis', 0) * s.get('shares', 1))
@@ -602,9 +645,7 @@ def get_all_data():
     total_rsu_gbp = 0
     total_rsu_gain = 0
     for s in rsu_list:
-        price = get_stock_price_gbp(s['ticker'], rates) if s.get('ticker') else None
-        if price is None:
-            price = s.get('current_price', s.get('vest_price', 0))
+        price = _fast_price(s.get('ticker'), {**s, 'current_price': s.get('current_price', s.get('vest_price', 0))}, rd, rates)
         value = round(s.get('shares', 0) * price, 2)
         total_rsu_gbp += value
         vest_value = round(s.get('shares', 0) * s.get('vest_price', price), 2)
@@ -622,9 +663,7 @@ def get_all_data():
     total_stocks_gbp = 0
     total_stocks_gain = 0
     for s in stocks_list:
-        price = get_stock_price_gbp(s['ticker'], rates) if s.get('ticker') else None
-        if price is None:
-            price = s.get('current_price', s.get('manual_price', 0))
+        price = _fast_price(s.get('ticker'), s, rd, rates)
         value = round(s.get('shares', 0) * price, 2)
         total_stocks_gbp += value
         invested = s.get('invested', s.get('cost_basis', 0) * s.get('shares', 1))
