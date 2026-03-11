@@ -1140,7 +1140,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
             <span style="font-size:12px;color:var(--text3)">After CGT</span>
             <label class="toggle-switch"><input type="checkbox" id="inv-cgt-toggle" onchange="toggleInvCGT()"><span class="toggle-slider"></span></label>
           </label>
-          <button id="t212-sync-btn-inv" onclick="t212Sync()" style="display:none;align-items:center;gap:5px;background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:500">
+          <button id="t212-sync-btn-inv" onclick="t212SyncAll()" style="display:none;align-items:center;gap:5px;background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:500">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             Sync T212
           </button>
@@ -2555,45 +2555,64 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
           <div>
             <div class="card-label">📈 Trading 212 Live Sync</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:3px">Auto-sync your ISA &amp; non-ISA positions, prices and dividends in real time</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:3px">Connect one or more T212 accounts — ISA, Invest, or Practice</div>
           </div>
-          <div id="t212-status-badge" style="display:none;font-size:11px;padding:3px 10px;border-radius:12px;font-weight:600;background:rgba(20,184,166,0.12);color:var(--teal);border:1px solid rgba(20,184,166,0.3)">🟢 Connected</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="t212-sync-all-btn-settings" onclick="t212SyncAll()" style="display:none" class="btn btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25)">🔄 Sync All</button>
+          </div>
         </div>
 
-        <div style="font-size:12px;color:var(--text3);margin-bottom:10px;padding:8px 10px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:8px">
-          💡 Go to T212 → Settings → API (Beta) → Generate a new key. You'll get a <strong>Key</strong> and a <strong>Secret</strong> (secret shown once only — copy it immediately).
-          <a href="https://app.trading212.com/en/settings" target="_blank" rel="noopener" style="color:var(--gold);margin-left:4px">Open T212 Settings →</a>
+        <!-- Connected accounts list -->
+        <div id="t212-connections-list" style="margin-bottom:12px"></div>
+
+        <!-- Add account toggle -->
+        <div style="display:flex;gap:8px;margin-bottom:4px">
+          <button class="btn btn-ghost btn-sm" onclick="t212ToggleAddForm()" id="t212-add-btn">+ Add Account</button>
         </div>
 
-        <div class="form-group" style="margin-bottom:10px">
-          <label class="form-label">API Key</label>
-          <input class="form-input" id="t212-api-key" type="password" placeholder="Paste your Trading 212 API key">
-        </div>
+        <!-- Add account form (hidden by default) -->
+        <div id="t212-add-form" style="display:none;margin-top:12px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.05em">Connect New Account</div>
 
-        <div class="form-group" style="margin-bottom:10px">
-          <label class="form-label">API Secret <span style="font-weight:400;color:var(--rose);font-size:11px">(shown only once when generated — save it somewhere safe)</span></label>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;padding:8px 10px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:8px">
+            💡 T212 → Settings → API (Beta) → Generate key. You get a <strong>Key</strong> + <strong>Secret</strong> (secret shown once — copy it now).
+            <a href="https://app.trading212.com/en/settings" target="_blank" rel="noopener" style="color:var(--gold);margin-left:4px">Open T212 →</a>
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label">Account name</label>
+            <input class="form-input" id="t212-new-name" type="text" placeholder="e.g. ISA Account, Practice">
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label">API Key</label>
+            <input class="form-input" id="t212-new-key" type="password" placeholder="Paste API key">
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label">API Secret <span style="font-weight:400;color:var(--rose);font-size:11px">(shown once only)</span></label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="t212-new-secret" type="password" placeholder="Paste API secret" style="flex:1">
+              <button class="btn btn-ghost btn-sm" onclick="t212TestNew()" style="white-space:nowrap">Test</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+            <span class="form-label" style="margin:0">Mode</span>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-mode" value="live" checked> Live account
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-mode" value="demo"> Practice account
+            </label>
+          </div>
+
+          <div id="t212-new-test-result" style="display:none;margin-bottom:10px;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid transparent"></div>
+
           <div style="display:flex;gap:8px">
-            <input class="form-input" id="t212-api-secret" type="password" placeholder="Paste your Trading 212 API secret" style="flex:1">
-            <button class="btn btn-ghost btn-sm" onclick="t212TestConnection()" style="white-space:nowrap">Test</button>
+            <button class="btn btn-gold btn-sm" onclick="t212SaveNewConnection()">Save &amp; Connect</button>
+            <button class="btn btn-ghost btn-sm" onclick="t212ToggleAddForm()">Cancel</button>
           </div>
-        </div>
-
-        <div style="display:flex;gap:16px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-          <span class="form-label" style="margin:0">Environment</span>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-            <input type="radio" name="t212-mode" value="live" id="t212-mode-live" onchange="t212ModeChange()" checked> Live account
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-            <input type="radio" name="t212-mode" value="demo" id="t212-mode-demo" onchange="t212ModeChange()"> Practice account
-          </label>
-        </div>
-
-        <div id="t212-test-result" style="display:none;margin-bottom:12px;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid transparent"></div>
-
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-gold btn-sm" onclick="t212SaveKey()">Save Credentials</button>
-          <button id="t212-sync-btn-settings" onclick="t212Sync()" style="display:none" class="btn btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25)">🔄 Sync Now</button>
-          <span id="t212-last-synced-settings" style="font-size:11px;color:var(--text3)"></span>
         </div>
       </div>
 
@@ -8324,153 +8343,204 @@ async function doAuth() {
 
 // ── Trading 212 Integration ────────────────────────────────────────────────
 
-let _t212Status = null;
+let _t212Connections = [];
 
 async function loadT212Status() {
   try {
     const r = await fetch('/api/t212/status', { headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') } });
-    _t212Status = await r.json();
-    _renderT212Status();
-  } catch(e) { /* non-critical, silently ignore */ }
+    const d = await r.json();
+    _t212Connections = d.connections || [];
+    _renderT212Connections();
+  } catch(e) { /* non-critical */ }
 }
 
-function _renderT212Status() {
-  if (!_t212Status) return;
-  const { configured, mode, last_synced } = _t212Status;
-
-  // Show/hide Sync buttons
-  const invBtn  = document.getElementById('t212-sync-btn-inv');
-  const settBtn = document.getElementById('t212-sync-btn-settings');
-  if (invBtn)  invBtn.style.display  = configured ? 'flex' : 'none';
-  if (settBtn) settBtn.style.display = configured ? ''     : 'none';
-
-  // Connected badge in settings card
-  const badge = document.getElementById('t212-status-badge');
-  if (badge) badge.style.display = configured ? '' : 'none';
-
-  // Restore mode radio
-  const liveRad = document.getElementById('t212-mode-live');
-  const demoRad = document.getElementById('t212-mode-demo');
-  if (liveRad && demoRad) {
-    liveRad.checked = (mode !== 'demo');
-    demoRad.checked = (mode === 'demo');
-  }
-
-  // Show masked placeholders if credentials are saved
-  const keyInput = document.getElementById('t212-api-key');
-  if (keyInput && configured && !keyInput.value) {
-    keyInput.placeholder = '••••••••••••••••••• (key saved — paste new key to update)';
-  }
-  const secInput = document.getElementById('t212-api-secret');
-  if (secInput && configured && !secInput.value) {
-    secInput.placeholder = '••••••••••••••••••• (secret saved — paste new secret to update)';
-  }
-
-  // Last synced timestamps
-  const fmtSync = last_synced
-    ? 'Last synced ' + new Date(last_synced).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
-    : '';
-  ['t212-last-synced-inv', 't212-last-synced-settings'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = fmtSync;
-  });
+function _fmtSynced(ts) {
+  if (!ts) return 'Never synced';
+  return 'Synced ' + new Date(ts).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
 }
 
-async function t212TestConnection() {
-  const key    = document.getElementById('t212-api-key')?.value?.trim();
-  const secret = document.getElementById('t212-api-secret')?.value?.trim();
-  const mode   = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
-  const res    = document.getElementById('t212-test-result');
-  if (!key)    { toast('Enter your API Key first', 'error'); return; }
-  if (!secret) { toast('Enter your API Secret first', 'error'); return; }
+function _renderT212Connections() {
+  const list   = document.getElementById('t212-connections-list');
+  const invBtn = document.getElementById('t212-sync-btn-inv');
+  const settBtn = document.getElementById('t212-sync-all-btn-settings');
+  const hasConns = _t212Connections.length > 0;
 
+  // Show/hide Sync All buttons
+  if (invBtn)  invBtn.style.display  = hasConns ? 'flex' : 'none';
+  if (settBtn) settBtn.style.display = hasConns ? ''     : 'none';
+
+  // Update last synced in investments header
+  const latestSync = _t212Connections.reduce((max, c) => {
+    if (!c.last_synced) return max;
+    return (!max || c.last_synced > max) ? c.last_synced : max;
+  }, null);
+  const invSyncEl = document.getElementById('t212-last-synced-inv');
+  if (invSyncEl) invSyncEl.textContent = latestSync ? _fmtSynced(latestSync) : '';
+
+  if (!list) return;
+
+  if (!hasConns) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:10px 0">No accounts connected yet. Click "+ Add Account" to get started.</div>`;
+    return;
+  }
+
+  list.innerHTML = _t212Connections.map(c => {
+    const modeBadge = c.mode === 'demo'
+      ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.25);font-weight:600">DEMO</span>`
+      : `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(20,184,166,0.12);color:var(--teal);border:1px solid rgba(20,184,166,0.3);font-weight:600">LIVE</span>`;
+    return `
+    <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface2)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:3px">${c.name} ${modeBadge}</div>
+          <div style="font-size:11px;color:var(--text3)">${_fmtSynced(c.last_synced)}</div>
+          <div id="t212-row-result-${c.id}" style="display:none;font-size:11px;margin-top:4px;padding:4px 8px;border-radius:6px;border:1px solid transparent"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212TestById('${c.id}')">Test</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212SyncById('${c.id}')">Sync</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212RenameConnection('${c.id}','${c.name.replace(/'/g,"\\'")}')">Rename</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:var(--rose)" onclick="t212DeleteConnection('${c.id}','${c.name.replace(/'/g,"\\'")}')">Remove</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function t212ToggleAddForm() {
+  const form = document.getElementById('t212-add-form');
+  const btn  = document.getElementById('t212-add-btn');
+  if (!form) return;
+  const visible = form.style.display !== 'none';
+  form.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? '+ Add Account' : '− Cancel';
+}
+
+async function _t212ShowTestResult(elId, bodyObj) {
+  const res = document.getElementById(elId);
+  if (!res) return;
   res.style.display = '';
-  res.style.background = 'var(--surface2)';
-  res.style.color = 'var(--text3)';
-  res.style.borderColor = 'transparent';
-  res.textContent = '⏳ Testing connection…';
-
+  res.style.background = 'var(--surface2)'; res.style.color = 'var(--text3)'; res.style.borderColor = 'transparent';
+  res.textContent = '⏳ Testing…';
   try {
     const r = await fetch('/api/t212/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
-      body: JSON.stringify({ api_key: key, api_secret: secret, mode })
+      body: JSON.stringify(bodyObj)
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     const c = d.cash || {};
-    res.style.background = 'rgba(20,184,166,0.08)';
-    res.style.color = 'var(--teal)';
-    res.style.borderColor = 'rgba(20,184,166,0.25)';
-    res.innerHTML = `✅ Connected to Trading 212 ${mode} account<br>
-      <span style="color:var(--text3)">Free cash: <strong style="color:var(--text)">${fmtGBP(c.free||0)}</strong> &nbsp;·&nbsp;
-      Invested: <strong style="color:var(--text)">${fmtGBP(c.invested||0)}</strong> &nbsp;·&nbsp;
-      Total P&amp;L: <strong style="color:${(c.result||0)>=0?'var(--teal)':'var(--rose)'}">${(c.result||0)>=0?'+':''}${fmtGBP(c.result||0)}</strong></span>`;
+    res.style.background = 'rgba(20,184,166,0.08)'; res.style.color = 'var(--teal)'; res.style.borderColor = 'rgba(20,184,166,0.25)';
+    res.innerHTML = `✅ Connected · Cash: <strong>${fmtGBP(c.free||0)}</strong> · Invested: <strong>${fmtGBP(c.invested||0)}</strong>`;
   } catch(e) {
-    res.style.background = 'rgba(239,68,68,0.08)';
-    res.style.color = 'var(--rose)';
-    res.style.borderColor = 'rgba(239,68,68,0.25)';
+    res.style.background = 'rgba(239,68,68,0.08)'; res.style.color = 'var(--rose)'; res.style.borderColor = 'rgba(239,68,68,0.25)';
     res.textContent = '❌ ' + e.message;
   }
 }
 
-async function t212SaveKey() {
-  const key    = document.getElementById('t212-api-key')?.value?.trim();
-  const secret = document.getElementById('t212-api-secret')?.value?.trim();
-  const mode   = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
-  if (!key)    { toast('Please enter your API Key', 'error'); return; }
-  if (!secret) { toast('Please enter your API Secret', 'error'); return; }
-  await fetch('/api/settings', {
+async function t212TestNew() {
+  const key    = document.getElementById('t212-new-key')?.value?.trim();
+  const secret = document.getElementById('t212-new-secret')?.value?.trim();
+  const mode   = document.querySelector('input[name="t212-new-mode"]:checked')?.value || 'live';
+  if (!key)    { toast('Enter API Key first', 'error'); return; }
+  if (!secret) { toast('Enter API Secret first', 'error'); return; }
+  await _t212ShowTestResult('t212-new-test-result', { api_key: key, api_secret: secret, mode });
+}
+
+async function t212TestById(id) {
+  await _t212ShowTestResult(`t212-row-result-${id}`, { id });
+}
+
+async function t212SaveNewConnection() {
+  const name   = document.getElementById('t212-new-name')?.value?.trim() || 'Account';
+  const key    = document.getElementById('t212-new-key')?.value?.trim();
+  const secret = document.getElementById('t212-new-secret')?.value?.trim();
+  const mode   = document.querySelector('input[name="t212-new-mode"]:checked')?.value || 'live';
+  if (!key)    { toast('Enter API Key', 'error'); return; }
+  if (!secret) { toast('Enter API Secret', 'error'); return; }
+  const r = await fetch('/api/t212/connections', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
-    body: JSON.stringify({ global_settings: { t212_api_key: key, t212_api_secret: secret, t212_mode: mode } })
+    body: JSON.stringify({ name, api_key: key, api_secret: secret, mode })
   });
-  toast('Trading 212 credentials saved ✓');
-  document.getElementById('t212-api-key').value = '';
-  document.getElementById('t212-api-secret').value = '';
+  const d = await r.json();
+  if (d.error) { toast('Error: ' + d.error, 'error'); return; }
+  toast(`✅ ${name} connected`);
+  // Clear form and collapse it
+  ['t212-new-name','t212-new-key','t212-new-secret'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const res = document.getElementById('t212-new-test-result');
+  if (res) res.style.display = 'none';
+  t212ToggleAddForm();
   await loadT212Status();
 }
 
-function t212ModeChange() {
-  if (_t212Status?.configured) {
-    const mode = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
-    fetch('/api/settings', {
+async function t212SyncById(id) {
+  toast('⏳ Syncing…');
+  try {
+    const r = await fetch('/api/t212/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
-      body: JSON.stringify({ global_settings: { t212_mode: mode } })
+      body: JSON.stringify({ id })
     });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    toast(`✅ Synced — ${d.added} new, ${d.updated} updated`);
+    await loadT212Status();
+    load();
+  } catch(e) {
+    toast('Sync failed: ' + e.message, 'error');
   }
 }
 
-async function t212Sync() {
-  const btns = ['t212-sync-btn-inv', 't212-sync-btn-settings'];
-  btns.forEach(id => {
-    const b = document.getElementById(id);
-    if (b) { b.disabled = true; b.style.opacity = '0.6'; }
-  });
+async function t212SyncAll() {
+  const syncIcon = `<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+  const staticIcon = `<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+  const btnIds = ['t212-sync-btn-inv', 't212-sync-all-btn-settings'];
+  btnIds.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = true; b.style.opacity = '0.6'; } });
   const invBtn = document.getElementById('t212-sync-btn-inv');
-  if (invBtn) invBtn.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Syncing…`;
+  if (invBtn) invBtn.innerHTML = syncIcon + ' Syncing…';
 
   try {
     const r = await fetch('/api/t212/sync', {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+      body: JSON.stringify({})
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    toast(`✅ T212 synced — ${d.added} new, ${d.updated} updated, ${d.dividends} dividends`);
+    let msg = `✅ T212 synced — ${d.added} new, ${d.updated} updated, ${d.dividends} dividends`;
+    if (d.warnings?.length) msg += ` (${d.warnings.length} warning${d.warnings.length>1?'s':''})`;
+    toast(msg);
     await loadT212Status();
     load();
   } catch(e) {
     toast('T212 sync failed: ' + e.message, 'error');
   } finally {
-    btns.forEach(id => {
-      const b = document.getElementById(id);
-      if (b) { b.disabled = false; b.style.opacity = ''; }
-    });
-    const invBtn2 = document.getElementById('t212-sync-btn-inv');
-    if (invBtn2) invBtn2.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Sync T212`;
+    btnIds.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = false; b.style.opacity = ''; } });
+    if (invBtn) invBtn.innerHTML = staticIcon + ' Sync T212';
   }
+}
+
+async function t212RenameConnection(id, currentName) {
+  const name = prompt('Rename account:', currentName);
+  if (!name || name.trim() === currentName) return;
+  await fetch(`/api/t212/connections/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    body: JSON.stringify({ name: name.trim() })
+  });
+  await loadT212Status();
+}
+
+async function t212DeleteConnection(id, name) {
+  if (!confirm(`Remove "${name}" from your connected accounts? This won't delete any synced holdings.`)) return;
+  await fetch(`/api/t212/connections/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+  });
+  toast(`${name} removed`);
+  await loadT212Status();
 }
 
 // ── Stock Intelligence ─────────────────────────────────────────────────────

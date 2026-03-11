@@ -239,7 +239,7 @@ def migrate_data(data):
     if 'watchlist' not in data:
         data['watchlist'] = []
 
-    # Trading 212 integration settings
+    # Trading 212 integration settings (kept for reference / legacy reads)
     gs = data.get('global_settings', {})
     for k, v in {
         't212_api_key':     '',
@@ -251,6 +251,23 @@ def migrate_data(data):
         if k not in gs:
             gs[k] = v
     data['global_settings'] = gs
+
+    # Migrate single T212 credentials → t212_connections list
+    if 't212_connections' not in data:
+        existing_key    = gs.get('t212_api_key', '')
+        existing_secret = gs.get('t212_api_secret', '')
+        if existing_key and existing_secret:
+            data['t212_connections'] = [{
+                'id':          str(uuid.uuid4()),
+                'name':        'Main Account',
+                'api_key':     existing_key,
+                'api_secret':  existing_secret,
+                'mode':        gs.get('t212_mode', 'live'),
+                'last_synced': gs.get('t212_last_synced'),
+                'enabled':     True,
+            }]
+        else:
+            data['t212_connections'] = []
 
     return data
 
@@ -304,6 +321,7 @@ def default_data():
             't212_last_synced': None,
             't212_auto_sync':   False,
         },
+        't212_connections': [],
         'family_profiles': [
             {
                 'id': 'primary',
@@ -3708,50 +3726,56 @@ def t212_strip_ticker(t212_ticker):
 
 @app.route('/api/t212/status', methods=['GET'])
 def t212_status():
-    data = load_data()
-    gs = data.get('global_settings', {})
+    data  = load_data()
+    conns = data.get('t212_connections', [])
     return jsonify({
-        'configured':   bool(gs.get('t212_api_key', '') and gs.get('t212_api_secret', '')),
-        'mode':         gs.get('t212_mode', 'live'),
-        'last_synced':  gs.get('t212_last_synced'),
-        'auto_sync':    gs.get('t212_auto_sync', False),
+        'configured':  bool(conns),
+        'connections': [
+            {
+                'id':          c['id'],
+                'name':        c.get('name', 'Account'),
+                'mode':        c.get('mode', 'live'),
+                'last_synced': c.get('last_synced'),
+                'enabled':     c.get('enabled', True),
+            }
+            for c in conns
+        ],
     })
 
 
 @app.route('/api/t212/test', methods=['POST'])
 def t212_test():
-    body       = request.get_json(force=True) or {}
-    data       = load_data()
-    gs         = data.get('global_settings', {})
-    api_key    = body.get('api_key')    or gs.get('t212_api_key', '')
-    api_secret = body.get('api_secret') or gs.get('t212_api_secret', '')
-    mode       = body.get('mode', gs.get('t212_mode', 'live'))
+    body    = request.get_json(force=True) or {}
+    data    = load_data()
+    conn_id = body.get('id')
+    if conn_id:
+        # Test a saved connection by id
+        conn = next((c for c in data.get('t212_connections', []) if c['id'] == conn_id), None)
+        if not conn:
+            return jsonify({'error': 'Connection not found'}), 404
+        api_key, api_secret, mode = conn['api_key'], conn['api_secret'], conn.get('mode', 'live')
+    else:
+        # Test inline credentials (from the add-account form)
+        api_key    = body.get('api_key', '').strip()
+        api_secret = body.get('api_secret', '').strip()
+        mode       = body.get('mode', 'live')
     if not api_key or not api_secret:
-        return jsonify({'error': 'Both API Key and API Secret are required'}), 400
+        return jsonify({'error': 'API Key and Secret required'}), 400
     result, err = t212_get('/equity/account/cash', api_key, mode, api_secret=api_secret)
     if err:
         return jsonify({'error': err}), 400
     return jsonify({'ok': True, 'cash': result})
 
 
-@app.route('/api/t212/sync', methods=['POST'])
-def t212_sync():
-    data = load_data()
-    gs   = data.get('global_settings', {})
-    api_key    = gs.get('t212_api_key', '')
-    api_secret = gs.get('t212_api_secret', '')
-    mode       = gs.get('t212_mode', 'live')
-    if not api_key or not api_secret:
-        return jsonify({'error': 'Trading 212 API Key and Secret not configured. Go to Settings to add them.'}), 400
+def _t212_sync_one(conn, inv, data):
+    """Sync positions + dividends for a single T212 connection. Returns (added, updated, div_count, error)."""
+    api_key    = conn['api_key']
+    api_secret = conn['api_secret']
+    mode       = conn.get('mode', 'live')
 
-    inv = data.setdefault('investments', {})
-    for b in ['isa', 'stocks']:
-        inv.setdefault(b, [])
-
-    # ── Fetch open positions ──────────────────────────────────────────────────
     raw, err = t212_get('/equity/positions', api_key, mode, api_secret=api_secret)
     if err:
-        return jsonify({'error': f'Failed to fetch positions: {err}'}), 502
+        return 0, 0, 0, err
 
     positions = raw if isinstance(raw, list) else raw.get('items', [])
     added = updated = 0
@@ -3768,12 +3792,11 @@ def t212_sync():
         quantity  = float(pos.get('quantity', 0))
         avg_price = float(pos.get('averagePrice', 0))
         cur_price = float(pos.get('currentPrice', 0))
-        ppl       = float(pos.get('ppl', 0))          # unrealised P&L in account currency (GBP)
+        ppl       = float(pos.get('ppl', 0))
         invested  = round(avg_price * quantity, 2)
         cur_value = round(cur_price * quantity, 2)
         gain_pct  = round(ppl / invested * 100, 2) if invested else 0
 
-        # Upsert: find existing holding by ticker (same bucket)
         existing = next(
             (h for h in inv[bucket] if t212_strip_ticker(h.get('ticker', '')).upper() == ticker.upper()),
             None
@@ -3796,7 +3819,7 @@ def t212_sync():
                 'id':            str(uuid.uuid4()),
                 'ticker':        ticker,
                 't212_ticker':   t212_ticker,
-                'name':          ticker,   # enriched by yfinance in background
+                'name':          ticker,
                 'shares':        quantity,
                 'avg_price':     round(avg_price, 4),
                 'current_price': round(cur_price, 4),
@@ -3826,9 +3849,9 @@ def t212_sync():
         if not items:
             break
         for d in items:
-            dticker  = t212_strip_ticker((d.get('ticker') or '').strip())
-            paid_on  = (d.get('paidOn') or '')[:10]
-            amount   = float(d.get('amount', 0))
+            dticker = t212_strip_ticker((d.get('ticker') or '').strip())
+            paid_on = (d.get('paidOn') or '')[:10]
+            amount  = float(d.get('amount', 0))
             if not dticker or not paid_on:
                 continue
             for b in ['isa', 'stocks']:
@@ -3847,26 +3870,111 @@ def t212_sync():
             break
         cursor = next_cursor
 
-    # ── Enrich names via yfinance cache (best-effort, non-blocking) ───────────
+    return added, updated, div_count, None
+
+
+@app.route('/api/t212/sync', methods=['POST'])
+def t212_sync():
+    body    = request.get_json(force=True) or {}
+    conn_id = body.get('id')   # optional: sync a specific connection only
+    data    = load_data()
+    conns   = data.get('t212_connections', [])
+
+    if not conns:
+        return jsonify({'error': 'No Trading 212 accounts configured. Go to Settings to add one.'}), 400
+
+    to_sync = [c for c in conns if c['id'] == conn_id] if conn_id \
+              else [c for c in conns if c.get('enabled', True)]
+
+    if not to_sync:
+        return jsonify({'error': 'No enabled accounts to sync'}), 400
+
+    inv = data.setdefault('investments', {})
+    for b in ['isa', 'stocks']:
+        inv.setdefault(b, [])
+
+    total_added = total_updated = total_divs = 0
+    errors   = []
+    synced_at = datetime.now().isoformat()
+
+    for conn in to_sync:
+        added, updated, divs, err = _t212_sync_one(conn, inv, data)
+        if err:
+            errors.append(f"{conn.get('name', 'Account')}: {err}")
+        else:
+            conn['last_synced'] = synced_at
+            total_added   += added
+            total_updated += updated
+            total_divs    += divs
+
+    # ── Enrich names via yfinance cache (best-effort) ─────────────────────────
     for b in ['isa', 'stocks']:
         for h in inv.get(b, []):
             if h.get('source') == 't212' and h.get('name') == h.get('ticker'):
-                rd = data.get('research_data', {})
-                cached = rd.get(h['ticker'].upper(), {})
+                cached = data.get('research_data', {}).get(h['ticker'].upper(), {})
                 if cached.get('name'):
                     h['name'] = cached['name']
 
-    gs['t212_last_synced'] = datetime.now().isoformat()
-    data['global_settings'] = gs
     save_data(data)
 
-    return jsonify({
+    result = {
         'ok':        True,
-        'added':     added,
-        'updated':   updated,
-        'dividends': div_count,
-        'synced_at': gs['t212_last_synced'],
-    })
+        'added':     total_added,
+        'updated':   total_updated,
+        'dividends': total_divs,
+        'synced_at': synced_at,
+    }
+    if errors:
+        result['warnings'] = errors
+    return jsonify(result)
+
+
+# ── T212 connection CRUD ───────────────────────────────────────────────────────
+
+@app.route('/api/t212/connections', methods=['POST'])
+def t212_add_connection():
+    body       = request.get_json(force=True) or {}
+    api_key    = body.get('api_key', '').strip()
+    api_secret = body.get('api_secret', '').strip()
+    name       = (body.get('name') or 'Account').strip()
+    mode       = body.get('mode', 'live')
+    if not api_key or not api_secret:
+        return jsonify({'error': 'API Key and Secret required'}), 400
+    data = load_data()
+    conn = {
+        'id':          str(uuid.uuid4()),
+        'name':        name,
+        'api_key':     api_key,
+        'api_secret':  api_secret,
+        'mode':        mode,
+        'last_synced': None,
+        'enabled':     True,
+    }
+    data.setdefault('t212_connections', []).append(conn)
+    save_data(data)
+    return jsonify({'ok': True, 'id': conn['id']})
+
+
+@app.route('/api/t212/connections/<conn_id>', methods=['PATCH'])
+def t212_update_connection(conn_id):
+    body = request.get_json(force=True) or {}
+    data = load_data()
+    conn = next((c for c in data.get('t212_connections', []) if c['id'] == conn_id), None)
+    if not conn:
+        return jsonify({'error': 'Connection not found'}), 404
+    for field in ['name', 'mode', 'enabled']:
+        if field in body:
+            conn[field] = body[field]
+    save_data(data)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/t212/connections/<conn_id>', methods=['DELETE'])
+def t212_delete_connection(conn_id):
+    data = load_data()
+    data['t212_connections'] = [c for c in data.get('t212_connections', []) if c['id'] != conn_id]
+    save_data(data)
+    return jsonify({'ok': True})
 
 
 # ─── Plaid Banking Integration ────────────────────────────────────────────────
