@@ -243,6 +243,7 @@ def migrate_data(data):
     gs = data.get('global_settings', {})
     for k, v in {
         't212_api_key':     '',
+        't212_api_secret':  '',
         't212_mode':        'live',
         't212_last_synced': None,
         't212_auto_sync':   False,
@@ -298,6 +299,7 @@ def default_data():
             'privacy_hide_banks': False,
             'privacy_hide_accounts': False,
             't212_api_key':     '',
+            't212_api_secret':  '',
             't212_mode':        'live',
             't212_last_synced': None,
             't212_auto_sync':   False,
@@ -3675,15 +3677,23 @@ T212_BASE = {
     'demo': 'https://demo.trading212.com/api/v0',
 }
 
-def t212_get(endpoint, api_key, mode='live'):
-    """Authenticated GET to the Trading 212 API. Returns (data, error)."""
+def t212_get(endpoint, api_key, mode='live', api_secret=None):
+    """Authenticated GET to the Trading 212 API. Returns (data, error).
+    T212 uses HTTP Basic Auth: api_key as username, api_secret as password.
+    Falls back to legacy single-key header if no secret provided.
+    """
     base = T212_BASE.get(mode, T212_BASE['live'])
     try:
-        r = requests.get(f'{base}{endpoint}', headers={'Authorization': api_key}, timeout=15)
+        if api_secret:
+            # Current T212 auth: Basic Auth (key:secret base64-encoded)
+            r = requests.get(f'{base}{endpoint}', auth=(api_key, api_secret), timeout=15)
+        else:
+            # Legacy fallback: single key in Authorization header
+            r = requests.get(f'{base}{endpoint}', headers={'Authorization': api_key}, timeout=15)
         if r.status_code == 200:
             return r.json(), None
         if r.status_code == 401:
-            return None, 'Invalid API key — check Settings → API (Beta) in Trading 212'
+            return None, 'Invalid credentials — ensure both API Key and API Secret are correct (Settings → API (Beta) in Trading 212)'
         return None, f'T212 error {r.status_code}: {r.text[:200]}'
     except Exception as e:
         return None, str(e)
@@ -3701,7 +3711,7 @@ def t212_status():
     data = load_data()
     gs = data.get('global_settings', {})
     return jsonify({
-        'configured':   bool(gs.get('t212_api_key', '')),
+        'configured':   bool(gs.get('t212_api_key', '') and gs.get('t212_api_secret', '')),
         'mode':         gs.get('t212_mode', 'live'),
         'last_synced':  gs.get('t212_last_synced'),
         'auto_sync':    gs.get('t212_auto_sync', False),
@@ -3710,14 +3720,15 @@ def t212_status():
 
 @app.route('/api/t212/test', methods=['POST'])
 def t212_test():
-    body    = request.get_json(force=True) or {}
-    data    = load_data()
-    gs      = data.get('global_settings', {})
-    api_key = body.get('api_key') or gs.get('t212_api_key', '')
-    mode    = body.get('mode', gs.get('t212_mode', 'live'))
-    if not api_key:
-        return jsonify({'error': 'No API key provided'}), 400
-    result, err = t212_get('/equity/account/cash', api_key, mode)
+    body       = request.get_json(force=True) or {}
+    data       = load_data()
+    gs         = data.get('global_settings', {})
+    api_key    = body.get('api_key')    or gs.get('t212_api_key', '')
+    api_secret = body.get('api_secret') or gs.get('t212_api_secret', '')
+    mode       = body.get('mode', gs.get('t212_mode', 'live'))
+    if not api_key or not api_secret:
+        return jsonify({'error': 'Both API Key and API Secret are required'}), 400
+    result, err = t212_get('/equity/account/cash', api_key, mode, api_secret=api_secret)
     if err:
         return jsonify({'error': err}), 400
     return jsonify({'ok': True, 'cash': result})
@@ -3727,17 +3738,18 @@ def t212_test():
 def t212_sync():
     data = load_data()
     gs   = data.get('global_settings', {})
-    api_key = gs.get('t212_api_key', '')
-    mode    = gs.get('t212_mode', 'live')
-    if not api_key:
-        return jsonify({'error': 'Trading 212 API key not configured. Go to Settings to add it.'}), 400
+    api_key    = gs.get('t212_api_key', '')
+    api_secret = gs.get('t212_api_secret', '')
+    mode       = gs.get('t212_mode', 'live')
+    if not api_key or not api_secret:
+        return jsonify({'error': 'Trading 212 API Key and Secret not configured. Go to Settings to add them.'}), 400
 
     inv = data.setdefault('investments', {})
     for b in ['isa', 'stocks']:
         inv.setdefault(b, [])
 
     # ── Fetch open positions ──────────────────────────────────────────────────
-    raw, err = t212_get('/equity/positions', api_key, mode)
+    raw, err = t212_get('/equity/positions', api_key, mode, api_secret=api_secret)
     if err:
         return jsonify({'error': f'Failed to fetch positions: {err}'}), 502
 
@@ -3807,7 +3819,7 @@ def t212_sync():
     div_count = 0
     cursor    = 0
     while True:
-        divs, div_err = t212_get(f'/equity/history/dividends?cursor={cursor}&limit=50', api_key, mode)
+        divs, div_err = t212_get(f'/equity/history/dividends?cursor={cursor}&limit=50', api_key, mode, api_secret=api_secret)
         if div_err or not divs:
             break
         items = divs if isinstance(divs, list) else divs.get('items', [])

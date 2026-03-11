@@ -2560,15 +2560,20 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
           <div id="t212-status-badge" style="display:none;font-size:11px;padding:3px 10px;border-radius:12px;font-weight:600;background:rgba(20,184,166,0.12);color:var(--teal);border:1px solid rgba(20,184,166,0.3)">🟢 Connected</div>
         </div>
 
+        <div style="font-size:12px;color:var(--text3);margin-bottom:10px;padding:8px 10px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:8px">
+          💡 Go to T212 → Settings → API (Beta) → Generate a new key. You'll get a <strong>Key</strong> and a <strong>Secret</strong> (secret shown once only — copy it immediately).
+          <a href="https://app.trading212.com/en/settings" target="_blank" rel="noopener" style="color:var(--gold);margin-left:4px">Open T212 Settings →</a>
+        </div>
+
         <div class="form-group" style="margin-bottom:10px">
-          <label class="form-label">API Key
-            <a href="https://app.trading212.com/en/settings" target="_blank" rel="noopener"
-               style="font-weight:400;color:var(--gold);font-size:11px;margin-left:8px;text-transform:none;letter-spacing:0">
-              Get from T212 → Settings → API (Beta) →
-            </a>
-          </label>
+          <label class="form-label">API Key</label>
+          <input class="form-input" id="t212-api-key" type="password" placeholder="Paste your Trading 212 API key">
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label">API Secret <span style="font-weight:400;color:var(--rose);font-size:11px">(shown only once when generated — save it somewhere safe)</span></label>
           <div style="display:flex;gap:8px">
-            <input class="form-input" id="t212-api-key" type="password" placeholder="Paste your Trading 212 API key" style="flex:1">
+            <input class="form-input" id="t212-api-secret" type="password" placeholder="Paste your Trading 212 API secret" style="flex:1">
             <button class="btn btn-ghost btn-sm" onclick="t212TestConnection()" style="white-space:nowrap">Test</button>
           </div>
         </div>
@@ -2586,7 +2591,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div id="t212-test-result" style="display:none;margin-bottom:12px;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid transparent"></div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-gold btn-sm" onclick="t212SaveKey()">Save Key</button>
+          <button class="btn btn-gold btn-sm" onclick="t212SaveKey()">Save Credentials</button>
           <button id="t212-sync-btn-settings" onclick="t212Sync()" style="display:none" class="btn btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25)">🔄 Sync Now</button>
           <span id="t212-last-synced-settings" style="font-size:11px;color:var(--text3)"></span>
         </div>
@@ -8351,10 +8356,14 @@ function _renderT212Status() {
     demoRad.checked = (mode === 'demo');
   }
 
-  // Show masked placeholder if key is saved
+  // Show masked placeholders if credentials are saved
   const keyInput = document.getElementById('t212-api-key');
   if (keyInput && configured && !keyInput.value) {
     keyInput.placeholder = '••••••••••••••••••• (key saved — paste new key to update)';
+  }
+  const secInput = document.getElementById('t212-api-secret');
+  if (secInput && configured && !secInput.value) {
+    secInput.placeholder = '••••••••••••••••••• (secret saved — paste new secret to update)';
   }
 
   // Last synced timestamps
@@ -8368,10 +8377,12 @@ function _renderT212Status() {
 }
 
 async function t212TestConnection() {
-  const key  = document.getElementById('t212-api-key')?.value?.trim();
-  const mode = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
-  const res  = document.getElementById('t212-test-result');
-  if (!key) { toast('Enter an API key first', 'error'); return; }
+  const key    = document.getElementById('t212-api-key')?.value?.trim();
+  const secret = document.getElementById('t212-api-secret')?.value?.trim();
+  const mode   = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
+  const res    = document.getElementById('t212-test-result');
+  if (!key)    { toast('Enter your API Key first', 'error'); return; }
+  if (!secret) { toast('Enter your API Secret first', 'error'); return; }
 
   res.style.display = '';
   res.style.background = 'var(--surface2)';
@@ -8383,7 +8394,7 @@ async function t212TestConnection() {
     const r = await fetch('/api/t212/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
-      body: JSON.stringify({ api_key: key, mode })
+      body: JSON.stringify({ api_key: key, api_secret: secret, mode })
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
@@ -8404,16 +8415,19 @@ async function t212TestConnection() {
 }
 
 async function t212SaveKey() {
-  const key  = document.getElementById('t212-api-key')?.value?.trim();
-  const mode = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
-  if (!key) { toast('Please enter an API key', 'error'); return; }
+  const key    = document.getElementById('t212-api-key')?.value?.trim();
+  const secret = document.getElementById('t212-api-secret')?.value?.trim();
+  const mode   = document.querySelector('input[name="t212-mode"]:checked')?.value || 'live';
+  if (!key)    { toast('Please enter your API Key', 'error'); return; }
+  if (!secret) { toast('Please enter your API Secret', 'error'); return; }
   await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
-    body: JSON.stringify({ global_settings: { t212_api_key: key, t212_mode: mode } })
+    body: JSON.stringify({ global_settings: { t212_api_key: key, t212_api_secret: secret, t212_mode: mode } })
   });
-  toast('Trading 212 API key saved ✓');
+  toast('Trading 212 credentials saved ✓');
   document.getElementById('t212-api-key').value = '';
+  document.getElementById('t212-api-secret').value = '';
   await loadT212Status();
 }
 
