@@ -964,10 +964,18 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
       <!-- Table -->
       <div class="card">
+        <!-- Transaction bulk-select bar -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllTxns()">☑ Select All</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="txn-deselect-btn" onclick="deselectAllTxns()">☐ Deselect All</button>
+          <span style="font-size:12px;color:var(--text3)" id="txn-bulk-count"></span>
+          <button class="btn btn-ghost btn-sm" id="txn-bulk-delete-btn" style="display:none;color:var(--rose)" onclick="bulkDeleteTxns()">🗑 Delete Selected</button>
+        </div>
         <div class="txn-table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width:28px;padding:8px 4px 8px 14px"><input type="checkbox" id="txn-select-all-cb" style="accent-color:var(--gold);cursor:pointer" onchange="txnSelectAllChange(this)" title="Select all visible"></th>
                 <th>Date</th>
                 <th>Description</th>
                 <th>Category</th>
@@ -1121,7 +1129,15 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
       <!-- Offline Accounts -->
       <div style="margin-top:20px">
-        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text2)" id="offline-accounts-label" style="display:none">Offline Accounts</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div style="font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--text2)" id="offline-accounts-label">Offline Accounts</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllAccounts()">☑ Select All</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="acc-deselect-btn" onclick="deselectAllAccounts()">☐ Deselect All</button>
+            <span style="font-size:12px;color:var(--text3)" id="acc-bulk-count"></span>
+            <button class="btn btn-ghost btn-sm" id="acc-bulk-delete-btn" style="display:none;color:var(--rose)" onclick="bulkDeleteAccounts()">🗑 Delete Selected</button>
+          </div>
+        </div>
         <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px"></div>
       </div>
     </div>
@@ -1336,6 +1352,8 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       <!-- Bulk operations bar -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllInvestments()">☑ Select All</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="inv-deselect-btn" onclick="deselectAllInvestments()">☐ Deselect All</button>
           <span style="font-size:12px;color:var(--text3)" id="bulk-select-count"></span>
         </div>
         <div style="display:flex;gap:8px">
@@ -3461,6 +3479,7 @@ function renderTransactions(txns) {
     const futureCls = t.is_future ? 'future-row' : '';
     const mortBadge = t.is_mortgage_txn ? `<span style="font-size:9px;background:rgba(139,92,246,0.12);color:#8B5CF6;padding:1px 5px;border-radius:3px;margin-left:4px">MORTGAGE TAB</span>` : '';
     return `<tr class="${futureCls}" style="${t.is_mortgage_txn?'opacity:0.5':''}">
+      <td style="padding:8px 4px 8px 14px;width:28px"><input type="checkbox" class="txn-cb" data-id="${t.id}" style="accent-color:var(--gold);cursor:pointer" onchange="toggleTxnSelect('${t.id}',this.checked)"></td>
       <td style="color:var(--text3);font-size:12px;white-space:nowrap">${t.date||'—'}</td>
       <td>
         <div style="font-weight:500">${t.description||'—'}${mortBadge}</div>
@@ -3517,11 +3536,14 @@ function renderAccounts() {
   } else {
     grid.innerHTML = offline.map(a => {
       const s = accMap[a.id] || { total_in:0, total_out:0, txn_count:0 };
-      return `<div class="account-card">
+      return `<div class="account-card" id="acc-card-${a.id}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div class="account-name">${maskAccount(a.name)}</div>
-            <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <input type="checkbox" class="acc-cb" data-id="${a.id}" style="accent-color:var(--gold);cursor:pointer;margin-top:3px;flex-shrink:0" onchange="toggleAccSelect('${a.id}',this.checked)">
+            <div>
+              <div class="account-name">${maskAccount(a.name)}</div>
+              <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
+            </div>
           </div>
           <div style="display:flex;gap:4px">
             <button class="action-btn" onclick="deleteAccountTxns('${a.id}','${esc(maskAccount(a.name))}')" title="Delete all transactions">🗑</button>
@@ -6449,10 +6471,13 @@ function toggleBulkSelect(type, id) {
 }
 
 function updateBulkUI() {
-  const btn = document.getElementById('bulk-delete-btn');
-  const count = document.getElementById('bulk-select-count');
-  if (btn) btn.style.display = bulkSelected.size > 0 ? '' : 'none';
-  if (count) count.textContent = bulkSelected.size > 0 ? `${bulkSelected.size} selected` : '';
+  const btn    = document.getElementById('bulk-delete-btn');
+  const count  = document.getElementById('bulk-select-count');
+  const desBtn = document.getElementById('inv-deselect-btn');
+  const n = bulkSelected.size;
+  if (btn)    btn.style.display    = n > 0 ? '' : 'none';
+  if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
 }
 
 async function bulkDeleteSelected() {
@@ -6472,6 +6497,126 @@ async function bulkDeleteSelected() {
   bulkSelected.clear();
   updateBulkUI();
   toast('Holdings deleted ✓');
+  await load();
+}
+
+function selectAllInvestments() {
+  document.querySelectorAll('.holding-row input[type="checkbox"]').forEach(cb => {
+    if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+  });
+  const desBtn = document.getElementById('inv-deselect-btn');
+  if (desBtn) desBtn.style.display = '';
+}
+
+function deselectAllInvestments() {
+  document.querySelectorAll('.holding-row input[type="checkbox"]').forEach(cb => {
+    if (cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
+  });
+  bulkSelected.clear();
+  updateBulkUI();
+  const desBtn = document.getElementById('inv-deselect-btn');
+  if (desBtn) desBtn.style.display = 'none';
+}
+
+// ── Transaction bulk select ────────────────────────────────────────────────────
+let txnSelected = new Set();
+
+function toggleTxnSelect(id, checked) {
+  checked ? txnSelected.add(id) : txnSelected.delete(id);
+  updateTxnBulkUI();
+}
+
+function updateTxnBulkUI() {
+  const btn    = document.getElementById('txn-bulk-delete-btn');
+  const count  = document.getElementById('txn-bulk-count');
+  const desBtn = document.getElementById('txn-deselect-btn');
+  const n = txnSelected.size;
+  if (btn)    btn.style.display    = n > 0 ? '' : 'none';
+  if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
+}
+
+function txnSelectAllChange(masterCb) {
+  const checked = masterCb.checked;
+  document.querySelectorAll('.txn-cb').forEach(cb => {
+    cb.checked = checked;
+    const id = cb.dataset.id;
+    checked ? txnSelected.add(id) : txnSelected.delete(id);
+  });
+  updateTxnBulkUI();
+}
+
+function selectAllTxns() {
+  document.querySelectorAll('.txn-cb').forEach(cb => { cb.checked = true; txnSelected.add(cb.dataset.id); });
+  const master = document.getElementById('txn-select-all-cb');
+  if (master) master.checked = true;
+  updateTxnBulkUI();
+}
+
+function deselectAllTxns() {
+  txnSelected.clear();
+  document.querySelectorAll('.txn-cb').forEach(cb => { cb.checked = false; });
+  const master = document.getElementById('txn-select-all-cb');
+  if (master) master.checked = false;
+  updateTxnBulkUI();
+}
+
+async function bulkDeleteTxns() {
+  if (!txnSelected.size) return;
+  if (!confirm(`Permanently delete ${txnSelected.size} transaction(s)? This cannot be undone.`)) return;
+  const ids = [...txnSelected];
+  await fetch('/api/transactions/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    body: JSON.stringify({ ids })
+  });
+  txnSelected.clear();
+  updateTxnBulkUI();
+  toast(`${ids.length} transaction(s) deleted ✓`);
+  await load();
+}
+
+// ── Account bulk select ────────────────────────────────────────────────────────
+let accSelected = new Set();
+
+function toggleAccSelect(id, checked) {
+  checked ? accSelected.add(id) : accSelected.delete(id);
+  updateAccBulkUI();
+}
+
+function updateAccBulkUI() {
+  const btn    = document.getElementById('acc-bulk-delete-btn');
+  const count  = document.getElementById('acc-bulk-count');
+  const desBtn = document.getElementById('acc-deselect-btn');
+  const n = accSelected.size;
+  if (btn)    btn.style.display    = n > 0 ? '' : 'none';
+  if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
+}
+
+function selectAllAccounts() {
+  document.querySelectorAll('.acc-cb').forEach(cb => { cb.checked = true; accSelected.add(cb.dataset.id); });
+  updateAccBulkUI();
+}
+
+function deselectAllAccounts() {
+  accSelected.clear();
+  document.querySelectorAll('.acc-cb').forEach(cb => { cb.checked = false; });
+  updateAccBulkUI();
+}
+
+async function bulkDeleteAccounts() {
+  if (!accSelected.size) return;
+  if (!confirm(`Delete ${accSelected.size} account(s) and ALL their transactions? This cannot be undone.`)) return;
+  const ids = [...accSelected];
+  await fetch('/api/accounts/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+    body: JSON.stringify({ ids })
+  });
+  accSelected.clear();
+  updateAccBulkUI();
+  toast(`${ids.length} account(s) deleted ✓`);
   await load();
 }
 

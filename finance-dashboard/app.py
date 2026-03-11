@@ -1004,6 +1004,19 @@ def delete_transaction(txn_id):
     save_data(data)
     return jsonify({'ok': True})
 
+@app.route('/api/transactions/bulk-delete', methods=['POST'])
+def bulk_delete_transactions():
+    """Delete multiple transactions by ID, or all transactions."""
+    data = load_data()
+    body = request.json or {}
+    ids        = set(body.get('ids', []))
+    delete_all = body.get('delete_all', False)
+    txns   = data.get('transactions', [])
+    before = len(txns)
+    data['transactions'] = [] if delete_all else [t for t in txns if t.get('id') not in ids]
+    save_data(data)
+    return jsonify({'ok': True, 'deleted': before - len(data['transactions'])})
+
 @app.route('/api/accounts', methods=['GET'])
 def get_accounts():
     return jsonify(load_data().get('accounts', []))
@@ -1029,6 +1042,21 @@ def delete_account(acc_id):
     data['accounts'] = [a for a in data.get('accounts', []) if a.get('id') != acc_id]
     save_data(data)
     return jsonify({'ok': True})
+
+@app.route('/api/accounts/bulk-delete', methods=['POST'])
+def bulk_delete_accounts():
+    """Delete multiple accounts (and their transactions) by ID, or all accounts."""
+    data = load_data()
+    body = request.json or {}
+    ids        = set(body.get('ids', []))
+    delete_all = body.get('delete_all', False)
+    accounts   = data.get('accounts', [])
+    del_ids    = {a['id'] for a in accounts} if delete_all else ids
+    before     = len(accounts)
+    data['accounts']      = [a for a in accounts if a.get('id') not in del_ids]
+    data['transactions']  = [t for t in data.get('transactions', []) if t.get('account_id') not in del_ids]
+    save_data(data)
+    return jsonify({'ok': True, 'deleted': before - len(data['accounts'])})
 
 @app.route('/api/accounts/<acc_id>/transactions', methods=['DELETE'])
 def delete_account_transactions(acc_id):
