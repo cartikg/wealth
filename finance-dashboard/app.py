@@ -239,6 +239,18 @@ def migrate_data(data):
     if 'watchlist' not in data:
         data['watchlist'] = []
 
+    # Trading 212 integration settings
+    gs = data.get('global_settings', {})
+    for k, v in {
+        't212_api_key':     '',
+        't212_mode':        'live',
+        't212_last_synced': None,
+        't212_auto_sync':   False,
+    }.items():
+        if k not in gs:
+            gs[k] = v
+    data['global_settings'] = gs
+
     return data
 
 def default_data():
@@ -285,6 +297,10 @@ def default_data():
             'privacy_alias': '',
             'privacy_hide_banks': False,
             'privacy_hide_accounts': False,
+            't212_api_key':     '',
+            't212_mode':        'live',
+            't212_last_synced': None,
+            't212_auto_sync':   False,
         },
         'family_profiles': [
             {
@@ -3650,6 +3666,195 @@ def tl_disconnect(connection_id):
     save_data(data)
 
     return jsonify({'ok': True})
+
+
+# ─── Trading 212 Integration ──────────────────────────────────────────────────
+
+T212_BASE = {
+    'live': 'https://live.trading212.com/api/v0',
+    'demo': 'https://demo.trading212.com/api/v0',
+}
+
+def t212_get(endpoint, api_key, mode='live'):
+    """Authenticated GET to the Trading 212 API. Returns (data, error)."""
+    base = T212_BASE.get(mode, T212_BASE['live'])
+    try:
+        r = requests.get(f'{base}{endpoint}', headers={'Authorization': api_key}, timeout=15)
+        if r.status_code == 200:
+            return r.json(), None
+        if r.status_code == 401:
+            return None, 'Invalid API key — check Settings → API (Beta) in Trading 212'
+        return None, f'T212 error {r.status_code}: {r.text[:200]}'
+    except Exception as e:
+        return None, str(e)
+
+
+def t212_strip_ticker(t212_ticker):
+    """Convert T212 ticker format (e.g. AAPL_US_EQ) to clean ticker (AAPL)."""
+    # T212 format: BASE_EXCHANGE_TYPE e.g. AAPL_US_EQ, VWRL_EQ, TSLA_US_EQ
+    parts = t212_ticker.split('_')
+    return parts[0] if parts else t212_ticker
+
+
+@app.route('/api/t212/status', methods=['GET'])
+def t212_status():
+    data = load_data()
+    gs = data.get('global_settings', {})
+    return jsonify({
+        'configured':   bool(gs.get('t212_api_key', '')),
+        'mode':         gs.get('t212_mode', 'live'),
+        'last_synced':  gs.get('t212_last_synced'),
+        'auto_sync':    gs.get('t212_auto_sync', False),
+    })
+
+
+@app.route('/api/t212/test', methods=['POST'])
+def t212_test():
+    body    = request.get_json(force=True) or {}
+    data    = load_data()
+    gs      = data.get('global_settings', {})
+    api_key = body.get('api_key') or gs.get('t212_api_key', '')
+    mode    = body.get('mode', gs.get('t212_mode', 'live'))
+    if not api_key:
+        return jsonify({'error': 'No API key provided'}), 400
+    result, err = t212_get('/equity/account/cash', api_key, mode)
+    if err:
+        return jsonify({'error': err}), 400
+    return jsonify({'ok': True, 'cash': result})
+
+
+@app.route('/api/t212/sync', methods=['POST'])
+def t212_sync():
+    data = load_data()
+    gs   = data.get('global_settings', {})
+    api_key = gs.get('t212_api_key', '')
+    mode    = gs.get('t212_mode', 'live')
+    if not api_key:
+        return jsonify({'error': 'Trading 212 API key not configured. Go to Settings to add it.'}), 400
+
+    inv = data.setdefault('investments', {})
+    for b in ['isa', 'stocks']:
+        inv.setdefault(b, [])
+
+    # ── Fetch open positions ──────────────────────────────────────────────────
+    raw, err = t212_get('/equity/positions', api_key, mode)
+    if err:
+        return jsonify({'error': f'Failed to fetch positions: {err}'}), 502
+
+    positions = raw if isinstance(raw, list) else raw.get('items', [])
+    added = updated = 0
+
+    for pos in positions:
+        t212_ticker = (pos.get('ticker') or '').strip()
+        if not t212_ticker:
+            continue
+
+        ticker  = t212_strip_ticker(t212_ticker)
+        # T212 frontend field: 'ISA' → isa bucket, everything else → stocks
+        bucket  = 'isa' if pos.get('frontend') == 'ISA' else 'stocks'
+
+        quantity  = float(pos.get('quantity', 0))
+        avg_price = float(pos.get('averagePrice', 0))
+        cur_price = float(pos.get('currentPrice', 0))
+        ppl       = float(pos.get('ppl', 0))          # unrealised P&L in account currency (GBP)
+        invested  = round(avg_price * quantity, 2)
+        cur_value = round(cur_price * quantity, 2)
+        gain_pct  = round(ppl / invested * 100, 2) if invested else 0
+
+        # Upsert: find existing holding by ticker (same bucket)
+        existing = next(
+            (h for h in inv[bucket] if t212_strip_ticker(h.get('ticker', '')).upper() == ticker.upper()),
+            None
+        )
+        if existing:
+            existing.update({
+                'shares':        quantity,
+                'avg_price':     round(avg_price, 4),
+                'current_price': round(cur_price, 4),
+                'current_value': cur_value,
+                'invested':      invested,
+                'gain_gbp':      round(ppl, 2),
+                'gain_pct':      gain_pct,
+                't212_ticker':   t212_ticker,
+                't212_synced':   datetime.now().isoformat(),
+            })
+            updated += 1
+        else:
+            inv[bucket].append({
+                'id':            str(uuid.uuid4()),
+                'ticker':        ticker,
+                't212_ticker':   t212_ticker,
+                'name':          ticker,   # enriched by yfinance in background
+                'shares':        quantity,
+                'avg_price':     round(avg_price, 4),
+                'current_price': round(cur_price, 4),
+                'current_value': cur_value,
+                'invested':      invested,
+                'gain_gbp':      round(ppl, 2),
+                'gain_pct':      gain_pct,
+                'currency':      'GBP',
+                'sector':        '',
+                'asset_class':   'equity',
+                'geography':     'US',
+                'dividend_yield_pct': 0,
+                'dividends':     [],
+                'source':        't212',
+                't212_synced':   datetime.now().isoformat(),
+            })
+            added += 1
+
+    # ── Fetch dividends (paginated, best-effort) ──────────────────────────────
+    div_count = 0
+    cursor    = 0
+    while True:
+        divs, div_err = t212_get(f'/equity/history/dividends?cursor={cursor}&limit=50', api_key, mode)
+        if div_err or not divs:
+            break
+        items = divs if isinstance(divs, list) else divs.get('items', [])
+        if not items:
+            break
+        for d in items:
+            dticker  = t212_strip_ticker((d.get('ticker') or '').strip())
+            paid_on  = (d.get('paidOn') or '')[:10]
+            amount   = float(d.get('amount', 0))
+            if not dticker or not paid_on:
+                continue
+            for b in ['isa', 'stocks']:
+                for h in inv.get(b, []):
+                    if t212_strip_ticker(h.get('ticker', '')).upper() == dticker.upper():
+                        existing_dates = {dv.get('date') for dv in h.get('dividends', [])}
+                        if paid_on not in existing_dates:
+                            h.setdefault('dividends', []).append({
+                                'date':   paid_on,
+                                'amount': round(amount, 4),
+                                'source': 't212',
+                            })
+                            div_count += 1
+        next_cursor = divs.get('nextCursor') if isinstance(divs, dict) else None
+        if not next_cursor:
+            break
+        cursor = next_cursor
+
+    # ── Enrich names via yfinance cache (best-effort, non-blocking) ───────────
+    for b in ['isa', 'stocks']:
+        for h in inv.get(b, []):
+            if h.get('source') == 't212' and h.get('name') == h.get('ticker'):
+                rd = data.get('research_data', {})
+                cached = rd.get(h['ticker'].upper(), {})
+                if cached.get('name'):
+                    h['name'] = cached['name']
+
+    gs['t212_last_synced'] = datetime.now().isoformat()
+    data['global_settings'] = gs
+    save_data(data)
+
+    return jsonify({
+        'ok':        True,
+        'added':     added,
+        'updated':   updated,
+        'dividends': div_count,
+        'synced_at': gs['t212_last_synced'],
+    })
 
 
 # ─── Plaid Banking Integration ────────────────────────────────────────────────
