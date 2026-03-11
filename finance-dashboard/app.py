@@ -3802,16 +3802,43 @@ def t212_test():
 
 
 def _t212_sync_one(conn, inv, data):
-    """Sync positions + dividends for a single T212 connection. Returns (added, updated, div_count, error)."""
+    """Sync positions + dividends for a single T212 connection.
+    Returns (added, updated, removed, div_count, error).
+    Uses a replace-style sync so closed positions are automatically removed.
+    """
     api_key    = conn['api_key']
     api_secret = conn['api_secret']
     mode       = conn.get('mode', 'live')
+    conn_id    = conn.get('id', '')
+    bucket     = conn.get('bucket', 'isa')
 
     raw, err = t212_get('/equity/positions', api_key, mode, api_secret=api_secret)
     if err:
-        return 0, 0, 0, err
+        return 0, 0, 0, 0, err
 
-    positions = raw if isinstance(raw, list) else raw.get('items', [])
+    positions  = raw if isinstance(raw, list) else raw.get('items', [])
+    synced_now = datetime.now().isoformat()
+
+    # Build set of tickers currently live in T212
+    live_tickers = {
+        t212_strip_ticker(pos.get('ticker', '').strip()).upper()
+        for pos in positions if pos.get('ticker')
+    }
+
+    # ── Remove positions that are no longer in T212 (closed / sold) ───────────
+    # Only touches holdings that originated from THIS connection (source='t212',
+    # t212_conn_id matches). Holdings added manually are untouched.
+    before = len(inv[bucket])
+    inv[bucket] = [
+        h for h in inv[bucket]
+        if not (
+            h.get('source') == 't212'
+            and (h.get('t212_conn_id') == conn_id or not h.get('t212_conn_id'))
+            and t212_strip_ticker(h.get('ticker', '')).upper() not in live_tickers
+        )
+    ]
+    removed = before - len(inv[bucket])
+
     added = updated = 0
 
     for pos in positions:
@@ -3819,10 +3846,7 @@ def _t212_sync_one(conn, inv, data):
         if not t212_ticker:
             continue
 
-        ticker  = t212_strip_ticker(t212_ticker)
-        # Use the connection-level bucket (set when the account is added in Settings)
-        bucket  = conn.get('bucket', 'isa')
-
+        ticker    = t212_strip_ticker(t212_ticker)
         quantity  = float(pos.get('quantity', 0))
         avg_price = float(pos.get('averagePrice', 0))
         cur_price = float(pos.get('currentPrice', 0))
@@ -3845,7 +3869,8 @@ def _t212_sync_one(conn, inv, data):
                 'gain_gbp':      round(ppl, 2),
                 'gain_pct':      gain_pct,
                 't212_ticker':   t212_ticker,
-                't212_synced':   datetime.now().isoformat(),
+                't212_conn_id':  conn_id,
+                't212_synced':   synced_now,
             })
             updated += 1
         else:
@@ -3853,6 +3878,7 @@ def _t212_sync_one(conn, inv, data):
                 'id':            str(uuid.uuid4()),
                 'ticker':        ticker,
                 't212_ticker':   t212_ticker,
+                't212_conn_id':  conn_id,
                 'name':          ticker,
                 'shares':        quantity,
                 'avg_price':     round(avg_price, 4),
@@ -3868,7 +3894,7 @@ def _t212_sync_one(conn, inv, data):
                 'dividend_yield_pct': 0,
                 'dividends':     [],
                 'source':        't212',
-                't212_synced':   datetime.now().isoformat(),
+                't212_synced':   synced_now,
             })
             added += 1
 
@@ -3904,7 +3930,7 @@ def _t212_sync_one(conn, inv, data):
             break
         cursor = next_cursor
 
-    return added, updated, div_count, None
+    return added, updated, removed, div_count, None
 
 
 @app.route('/api/t212/sync', methods=['POST'])
@@ -3927,34 +3953,71 @@ def t212_sync():
     for b in ['isa', 'stocks']:
         inv.setdefault(b, [])
 
-    total_added = total_updated = total_divs = 0
-    errors   = []
+    total_added = total_updated = total_removed = total_divs = 0
+    errors    = []
     synced_at = datetime.now().isoformat()
 
     for conn in to_sync:
-        added, updated, divs, err = _t212_sync_one(conn, inv, data)
+        added, updated, removed, divs, err = _t212_sync_one(conn, inv, data)
         if err:
             errors.append(f"{conn.get('name', 'Account')}: {err}")
         else:
             conn['last_synced'] = synced_at
             total_added   += added
             total_updated += updated
+            total_removed += removed
             total_divs    += divs
 
     # ── Enrich names via yfinance cache (best-effort) ─────────────────────────
+    rd = data.setdefault('research_data', {})
     for b in ['isa', 'stocks']:
         for h in inv.get(b, []):
             if h.get('source') == 't212' and h.get('name') == h.get('ticker'):
-                cached = data.get('research_data', {}).get(h['ticker'].upper(), {})
+                cached = rd.get(h['ticker'].upper(), {})
                 if cached.get('name'):
                     h['name'] = cached['name']
 
+    # ── Auto-populate research_data stubs for all T212 tickers ────────────────
+    # This ensures T212 holdings appear in the Stock Intelligence tab immediately.
+    # Entries with updated=None will be fully enriched by the background yfinance fetch.
+    new_tickers = []
+    for b in ['isa', 'stocks']:
+        for h in inv.get(b, []):
+            if h.get('source') != 't212':
+                continue
+            tk = h.get('ticker', '').upper()
+            if not tk:
+                continue
+            if tk not in rd:
+                rd[tk] = {
+                    'ticker':        tk,
+                    'name':          h.get('name', tk),
+                    'current_price': h.get('current_price', 0),
+                    'currency':      h.get('currency', 'GBP'),
+                    'sector':        h.get('sector', ''),
+                    'updated':       None,   # triggers full yfinance fetch
+                }
+                new_tickers.append(tk)
+            elif rd[tk].get('name', tk) == tk and h.get('name', tk) != tk:
+                rd[tk]['name'] = h['name']  # keep name in sync
+
     save_data(data)
+
+    # ── Background yfinance fetch for newly discovered T212 tickers ───────────
+    if new_tickers:
+        def _bg_refresh(tickers):
+            for tk in tickers:
+                try:
+                    fetch_and_cache_ticker(tk, force=True)
+                except Exception as e:
+                    print(f'[t212_sync bg] {tk}: {e}')
+        threading.Thread(target=_bg_refresh, args=(new_tickers,), daemon=True).start()
 
     result = {
         'ok':        True,
         'added':     total_added,
         'updated':   total_updated,
+        'removed':   total_removed,
         'dividends': total_divs,
         'synced_at': synced_at,
     }

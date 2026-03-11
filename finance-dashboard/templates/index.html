@@ -8704,7 +8704,9 @@ async function t212SyncById(id) {
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    toast(`✅ Synced — ${d.added} new, ${d.updated} updated`);
+    let smsg = `✅ Synced — ${d.added} new, ${d.updated} updated`;
+    if (d.removed) smsg += `, ${d.removed} removed`;
+    toast(smsg);
     await loadT212Status();
     load();
   } catch(e) {
@@ -8728,7 +8730,9 @@ async function t212SyncAll() {
     });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    let msg = `✅ T212 synced — ${d.added} new, ${d.updated} updated, ${d.dividends} dividends`;
+    let msg = `✅ T212 synced — ${d.added} new, ${d.updated} updated`;
+    if (d.removed) msg += `, ${d.removed} removed`;
+    if (d.dividends) msg += `, ${d.dividends} dividends`;
     if (d.warnings?.length) msg += ` (${d.warnings.length} warning${d.warnings.length>1?'s':''})`;
     toast(msg);
     await loadT212Status();
