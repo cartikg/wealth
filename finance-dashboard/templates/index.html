@@ -563,6 +563,10 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
       Investments
     </div>
+    <div class="nav-item" onclick="nav('intelligence',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      Stock Intelligence
+    </div>
     <div class="nav-item" onclick="nav('mortgage',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0V15"/></svg>
       Mortgage & Debt
@@ -1558,6 +1562,166 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div id="income-tax-content"></div>
       </div>
 
+    </div>
+
+    <!-- ── STOCK INTELLIGENCE ────────────────────────────────────────────── -->
+    <div id="section-intelligence" class="section">
+
+      <!-- Header bar -->
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-family:var(--font-display);font-size:26px;font-weight:600">💡 Stock Intelligence</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Research any ticker · Score your portfolio · AI-powered recommendations</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="position:relative">
+            <input id="si-search" type="text" class="form-input" placeholder="Search or add ticker… e.g. NVDA" style="width:200px;padding-right:36px" oninput="siSearchInput()" onkeydown="if(event.key==='Enter')siAddTicker()">
+            <button onclick="siAddTicker()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--teal);cursor:pointer;font-size:16px" title="Add ticker">+</button>
+          </div>
+          <button class="btn btn-gold btn-sm" onclick="siLoadRecommendations()">🤖 AI Picks</button>
+          <button class="btn btn-sm" onclick="siRefreshAll()" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)">🔄 Refresh All</button>
+        </div>
+      </div>
+
+      <!-- View filter pills -->
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="si-filter-bar">
+        <button class="chip active" onclick="siSetFilter('all',this)">★ All</button>
+        <button class="chip" onclick="siSetFilter('portfolio',this)">📁 My Portfolio</button>
+        <button class="chip" onclick="siSetFilter('watchlist',this)">👁 Watchlist</button>
+        <button class="chip" onclick="siSetFilter('ai',this)">🤖 AI Picks</button>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--text3)">Sort:</span>
+          <select id="si-sort" class="form-select" style="padding:4px 8px;font-size:12px" onchange="siRenderTable()">
+            <option value="score">Score ▼</option>
+            <option value="upside">Upside ▼</option>
+            <option value="cagr5">CAGR 5yr ▼</option>
+            <option value="name">Name A-Z</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Priority action alerts -->
+      <div id="si-alerts" style="display:none;margin-bottom:16px"></div>
+
+      <!-- Main table -->
+      <div class="card" style="padding:0;overflow:hidden">
+        <div id="si-table-loading" style="text-align:center;padding:40px;color:var(--text3)">
+          <div style="font-size:24px;margin-bottom:8px">📊</div>
+          Loading stock intelligence…
+        </div>
+        <div id="si-table-wrap" style="display:none;overflow-x:auto">
+          <table id="si-table" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:var(--surface2);text-align:left">
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">TICKER</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">SIGNAL</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">UPSIDE</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">5YR CAGR</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">NEXT ER</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">VERDICT</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px"></th>
+              </tr>
+            </thead>
+            <tbody id="si-tbody"></tbody>
+          </table>
+        </div>
+        <div id="si-empty" style="display:none;text-align:center;padding:40px">
+          <div style="font-size:36px;margin-bottom:8px">📈</div>
+          <div style="font-weight:600;margin-bottom:6px">No tickers tracked yet</div>
+          <div style="font-size:13px;color:var(--text3);margin-bottom:16px">Search for a ticker above to get started</div>
+          <button class="btn btn-gold" onclick="document.getElementById('si-search').focus()">+ Add First Ticker</button>
+        </div>
+      </div>
+
+      <!-- AI Recommendations Panel -->
+      <div id="si-ai-panel" style="display:none;margin-top:20px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div>
+              <div style="font-weight:600;font-size:15px">🤖 AI Portfolio Recommendations</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px">Based on your portfolio gaps, risk profile &amp; diversification</div>
+            </div>
+            <button class="btn btn-sm" onclick="document.getElementById('si-ai-panel').style.display='none'" style="background:none;border:none;color:var(--text3);font-size:18px">×</button>
+          </div>
+          <div id="si-ai-content"><div style="text-align:center;padding:20px;color:var(--text3)">Loading AI recommendations…</div></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── STOCK INTELLIGENCE: TICKER PANEL (slide-in) ────────────────────── -->
+    <div id="si-ticker-panel" style="display:none;position:fixed;top:0;right:0;width:460px;max-width:96vw;height:100vh;background:var(--surface);border-left:1px solid var(--border);z-index:300;overflow-y:auto;box-shadow:-4px 0 24px rgba(0,0,0,0.3)">
+      <div style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <div style="font-family:var(--font-display);font-size:22px;font-weight:700" id="sp-ticker-title">—</div>
+            <div style="font-size:13px;color:var(--text3)" id="sp-ticker-name">—</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" onclick="siEditResearch(siCurrentTicker)" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)">✏️ Edit</button>
+            <button onclick="document.getElementById('si-ticker-panel').style.display='none'" style="background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer">×</button>
+          </div>
+        </div>
+        <div id="sp-content"><div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div></div>
+      </div>
+    </div>
+    <div id="si-panel-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:299" onclick="siClosePanel()"></div>
+
+    <!-- ── STOCK INTELLIGENCE: RESEARCH FORM MODAL ────────────────────────── -->
+    <div id="si-research-modal" class="modal-overlay" style="display:none">
+      <div class="modal-box" style="max-width:500px;width:96%">
+        <div class="modal-header">
+          <div class="modal-title" id="si-form-title">Add Research</div>
+          <button class="modal-close" onclick="document.getElementById('si-research-modal').style.display='none'">×</button>
+        </div>
+        <div style="padding:20px">
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
+            <div class="form-group">
+              <label class="form-label">Ticker *</label>
+              <input id="si-form-ticker" class="form-input" placeholder="NVDA" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Company Name</label>
+              <input id="si-form-name" class="form-input" placeholder="NVIDIA Corp (auto-fetched)">
+            </div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Auto-fetch live data from Yahoo Finance (free, no API key needed)</div>
+            <button class="btn btn-gold btn-sm" onclick="siFetchLive()" id="si-fetch-btn">🔄 Fetch Live Data</button>
+            <span id="si-fetch-status" style="font-size:12px;color:var(--text3);margin-left:10px"></span>
+          </div>
+          <div id="si-fetched-preview" style="display:none;background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;line-height:1.8">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Your Notes / Conviction</label>
+            <textarea id="si-form-notes" class="form-input" rows="2" placeholder="Why you like or dislike this stock…" style="resize:vertical"></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+            <div class="form-group">
+              <label class="form-label">Profit Target £</label>
+              <input id="si-form-target" class="form-input" type="number" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Stop Loss £</label>
+              <input id="si-form-stop" class="form-input" type="number" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Re-entry Low £</label>
+              <input id="si-form-reentry" class="form-input" type="number" placeholder="0">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label class="form-label">
+              <input type="checkbox" id="si-form-watchlist" style="margin-right:6px">
+              Add to Watchlist
+            </label>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn" onclick="document.getElementById('si-research-modal').style.display='none'" style="background:var(--surface2);border:1px solid var(--border);color:var(--text2)">Cancel</button>
+            <button class="btn btn-gold" onclick="siSaveResearch()">Save &amp; Track</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── MORTGAGE & DEBT ──────────────────────────────────────────────── -->
@@ -2693,7 +2857,7 @@ const sectionTitles = {
   overview:'Overview', networth:'Net Worth', forecast:'12-Month Forecast', retirement:'Retirement Planner',
   transactions:'Transactions', accounts:'Accounts', investments:'Investments', mortgage:'Mortgage & Debt',
   receipts:'Receipts', tax:'Tax Strategy', estate:'Estate & Legacy',
-  ai:'AI Advisor', settings:'Settings'
+  ai:'AI Advisor', settings:'Settings', intelligence:'Stock Intelligence'
 };
 function nav(id, el) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -2832,6 +2996,7 @@ function renderAll() {
   renderSettings();
   renderTaxStrategy();
   renderEstate();
+  renderIntelligence();
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────
@@ -6091,6 +6256,10 @@ function renderReturnsTable() {
   const el = document.getElementById('pa-returns-table');
   if (!el) return;
 
+  // Build score lookup from SI data
+  const siScoreMap = {};
+  (SI.scores || []).forEach(s => { if (s.ticker) siScoreMap[s.ticker.toUpperCase()] = s; });
+
   let html = `<table style="width:100%;font-size:12px;border-collapse:collapse">
     <thead><tr style="border-bottom:1px solid var(--border)">
       <th style="text-align:left;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Holding</th>
@@ -6098,6 +6267,7 @@ function renderReturnsTable() {
       <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Current Value</th>
       <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Capital Gain</th>
       <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Allocation</th>
+      <th style="text-align:center;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Signal</th>
     </tr></thead><tbody>`;
 
   for (const h of filtered) {
@@ -6105,6 +6275,24 @@ function renderReturnsTable() {
     const alloc = (h.val / totalVal * 100);
     const bCol  = PA_BUCKET_COLORS[h.bucket] || '#666';
     const bLbl  = PA_BUCKET_LABELS[h.bucket] || h.bucket;
+
+    // Signal score badge
+    const siData = h.ticker ? siScoreMap[h.ticker.toUpperCase()] : null;
+    let signalHtml;
+    if (siData && siData.composite != null) {
+      const vs = siVerdictStyle(siData.verdict);
+      signalHtml = `<div style="text-align:center;cursor:pointer" onclick="nav('intelligence',document.querySelector('.nav-item[onclick*=intelligence]'));setTimeout(()=>siOpenPanel('${h.ticker}'),300)">
+        <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:${vs.color}">${siData.composite}</div>
+        <div style="font-size:9px;color:${vs.color};white-space:nowrap">${siData.verdict}</div>
+      </div>`;
+    } else if (h.ticker) {
+      signalHtml = `<div style="text-align:center;cursor:pointer" onclick="nav('intelligence',document.querySelector('.nav-item[onclick*=intelligence]'));setTimeout(()=>siEditResearch('${h.ticker}'),300)" title="Click to add research data">
+        <div style="font-size:10px;color:var(--text3)">+ Score</div>
+      </div>`;
+    } else {
+      signalHtml = `<span style="color:var(--text3)">—</span>`;
+    }
+
     html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">
       <td style="padding:7px 8px">
         <div style="font-weight:500">${h.name}</div>
@@ -6128,9 +6316,10 @@ function renderReturnsTable() {
           <div style="height:3px;border-radius:2px;background:${bCol};width:${Math.min(alloc*4,100)}%"></div>
         </div>
       </td>
+      <td style="padding:7px 8px">${signalHtml}</td>
     </tr>`;
   }
-  if (!filtered.length) html += `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">No holdings found</td></tr>`;
+  if (!filtered.length) html += `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">No holdings found</td></tr>`;
   html += '</tbody></table>';
   el.innerHTML = html;
 }
@@ -8079,6 +8268,580 @@ async function doAuth() {
     setInterval(load, 300000); // refresh every 5 min
   }
 })();
+
+// ── Stock Intelligence ─────────────────────────────────────────────────────
+
+let SI = { scores: [], research: {}, filter: 'all', currentTicker: null };
+window.siCurrentTicker = null;
+
+// Verdict config
+const SI_VERDICTS = {
+  'STRONG BUY': { color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  'BUY':        { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' },
+  'HOLD':       { color: '#facc15', bg: 'rgba(250,204,21,0.12)' },
+  'TRIM':       { color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
+  'REDUCE':     { color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+  'EXIT':       { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  'NO DATA':    { color: 'var(--text3)', bg: 'transparent' },
+};
+
+function siVerdictStyle(v) {
+  return SI_VERDICTS[v] || SI_VERDICTS['NO DATA'];
+}
+
+async function renderIntelligence() {
+  const wrap = document.getElementById('si-table-wrap');
+  const loading = document.getElementById('si-table-loading');
+  const empty = document.getElementById('si-empty');
+  if (!wrap) return;
+
+  loading.style.display = 'block';
+  wrap.style.display = 'none';
+  empty.style.display = 'none';
+
+  try {
+    const [scores, research] = await Promise.all([
+      fetch('/api/scores', {headers:{Authorization:'Bearer '+localStorage.getItem('auth_token')}}).then(r=>r.json()),
+      fetch('/api/research-data', {headers:{Authorization:'Bearer '+localStorage.getItem('auth_token')}}).then(r=>r.json()),
+    ]);
+    SI.scores = Array.isArray(scores) ? scores : [];
+    SI.research = research || {};
+
+    loading.style.display = 'none';
+    if (SI.scores.length === 0) {
+      empty.style.display = 'block';
+    } else {
+      wrap.style.display = 'block';
+      siRenderTable();
+    }
+    siRenderAlerts();
+    // Also refresh the Returns tab in Portfolio Analytics with score badges
+    if (typeof renderReturnsTable === 'function') renderReturnsTable();
+  } catch(e) {
+    loading.textContent = 'Error loading data. Try refreshing.';
+  }
+}
+
+// Determine if ticker is in portfolio
+function siIsPortfolio(ticker) {
+  if (!D || !D.investments) return false;
+  const t = ticker.toUpperCase();
+  for (const bucket of Object.values(D.investments)) {
+    if (Array.isArray(bucket) && bucket.some(h => (h.ticker||h.symbol||'').toUpperCase() === t)) return true;
+  }
+  return false;
+}
+
+function siGetPortfolioTickers() {
+  if (!D || !D.investments) return new Set();
+  const s = new Set();
+  for (const bucket of Object.values(D.investments)) {
+    if (Array.isArray(bucket)) bucket.forEach(h => { if(h.ticker||h.symbol) s.add((h.ticker||h.symbol).toUpperCase()); });
+  }
+  return s;
+}
+
+function siSetFilter(f, el) {
+  SI.filter = f;
+  document.querySelectorAll('#si-filter-bar .chip').forEach(c => c.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (f === 'ai') {
+    siLoadRecommendations();
+  }
+  siRenderTable();
+}
+
+function siRenderTable() {
+  const tbody = document.getElementById('si-tbody');
+  if (!tbody) return;
+
+  const sort = document.getElementById('si-sort')?.value || 'score';
+  const portfolioTickers = siGetPortfolioTickers();
+  const watchlist = (D && D.watchlist) || [];
+
+  let rows = [...SI.scores];
+
+  // Filter
+  if (SI.filter === 'portfolio') {
+    rows = rows.filter(r => portfolioTickers.has(r.ticker));
+  } else if (SI.filter === 'watchlist') {
+    rows = rows.filter(r => watchlist.includes(r.ticker));
+  }
+  // 'all' and 'ai' show all tracked tickers
+
+  // Sort
+  rows.sort((a, b) => {
+    if (sort === 'score') return (b.composite||0) - (a.composite||0);
+    if (sort === 'upside') return (b.upside_pct||0) - (a.upside_pct||0);
+    if (sort === 'cagr5') return (b.cagr_5yr||0) - (a.cagr_5yr||0);
+    if (sort === 'name') return (a.name||a.ticker).localeCompare(b.name||b.ticker);
+    return 0;
+  });
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3)">No tickers match this filter</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => {
+    const vs = siVerdictStyle(row.verdict);
+    const isOwned = portfolioTickers.has(row.ticker);
+    const isWatched = watchlist.includes(row.ticker);
+    const scoreBar = row.composite != null
+      ? `<div style="display:flex;align-items:center;gap:6px">
+           <div style="width:80px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+             <div style="width:${row.composite}%;height:100%;background:${vs.color};border-radius:3px"></div>
+           </div>
+           <span style="font-family:var(--font-display);font-weight:700;font-size:14px">${row.composite}</span>
+         </div>`
+      : `<span style="color:var(--text3);font-size:12px">No data</span>`;
+
+    const upside = row.upside_pct != null
+      ? `<span style="color:${row.upside_pct>=0?'var(--teal)':'var(--rose)'}">${row.upside_pct>=0?'+':''}${row.upside_pct.toFixed(1)}%</span>`
+      : `<span style="color:var(--text3)">—</span>`;
+
+    const cagr5 = row.cagr_5yr != null
+      ? `<span style="color:${row.cagr_5yr>=0?'var(--teal)':'var(--rose)'}">${row.cagr_5yr>=0?'+':''}${row.cagr_5yr.toFixed(0)}%/yr</span>`
+      : `<span style="color:var(--text3)">—</span>`;
+
+    let erStr = '—';
+    let erColor = 'var(--text3)';
+    if (row.next_earnings) {
+      const erDate = new Date(row.next_earnings);
+      const days = Math.round((erDate - new Date()) / 86400000);
+      erStr = days < 0 ? 'Past' : days === 0 ? 'Today ⚡' : days <= 14 ? `${days}d ⚡` : row.next_earnings.slice(5);
+      if (days >= 0 && days <= 14) erColor = '#fb923c';
+    }
+
+    const badges = [];
+    if (isOwned) badges.push(`<span style="font-size:9px;background:var(--gold-dim);color:var(--gold);border-radius:3px;padding:1px 5px">HELD</span>`);
+    if (isWatched) badges.push(`<span style="font-size:9px;background:rgba(20,184,166,0.1);color:var(--teal);border-radius:3px;padding:1px 5px">WATCH</span>`);
+    if (row.warnings && row.warnings.length > 0) badges.push(`<span style="font-size:9px;background:rgba(248,113,113,0.1);color:var(--rose);border-radius:3px;padding:1px 5px">⚠</span>`);
+
+    const verdictBadge = row.verdict !== 'NO DATA'
+      ? `<span style="background:${vs.bg};color:${vs.color};padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.5px">${row.verdict}</span>`
+      : `<span style="color:var(--text3);font-size:12px">—</span>`;
+
+    return `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="siOpenPanel('${row.ticker}')" class="si-row">
+      <td style="padding:10px 14px">
+        <div style="font-weight:700;font-size:13px">${row.ticker}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.name||''}</div>
+        <div style="display:flex;gap:3px;margin-top:3px">${badges.join('')}</div>
+      </td>
+      <td style="padding:10px 14px">${scoreBar}</td>
+      <td style="padding:10px 14px;font-size:13px">${upside}</td>
+      <td style="padding:10px 14px;font-size:13px">${cagr5}</td>
+      <td style="padding:10px 14px;font-size:12px;color:${erColor}">${erStr}</td>
+      <td style="padding:10px 14px">${verdictBadge}</td>
+      <td style="padding:10px 14px;text-align:right">
+        <button onclick="event.stopPropagation();siEditResearch('${row.ticker}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px" title="Edit">✏️</button>
+        <button onclick="event.stopPropagation();siDeleteTicker('${row.ticker}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px" title="Remove">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Add hover effect
+  document.querySelectorAll('.si-row').forEach(r => {
+    r.addEventListener('mouseenter', function() { this.style.background = 'var(--surface2)'; });
+    r.addEventListener('mouseleave', function() { this.style.background = ''; });
+  });
+}
+
+function siRenderAlerts() {
+  const el = document.getElementById('si-alerts');
+  if (!el) return;
+  const alerts = [];
+  SI.scores.forEach(row => {
+    if (row.warnings && row.warnings.length > 0) {
+      row.warnings.forEach(w => {
+        alerts.push(`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(248,113,113,0.08);border-left:3px solid var(--rose);border-radius:4px;font-size:13px">
+          <span style="color:var(--rose)">⚠</span>
+          <strong>${row.ticker}</strong>: ${w}
+        </div>`);
+      });
+    }
+  });
+  if (alerts.length > 0) {
+    el.style.display = 'block';
+    el.innerHTML = `<div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:8px;letter-spacing:0.5px">PRIORITY ACTIONS</div>` + alerts.join('');
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── Add / Search ──────────────────────────────────────────────────────────────
+
+function siSearchInput() {
+  // Could add autocomplete here in future
+}
+
+async function siAddTicker() {
+  const ticker = document.getElementById('si-search')?.value?.trim().toUpperCase();
+  if (!ticker) return;
+  document.getElementById('si-search').value = '';
+  // Open research form pre-filled
+  siEditResearch(ticker);
+}
+
+function siEditResearch(ticker) {
+  window.siCurrentTicker = ticker;
+  const r = SI.research[ticker] || {};
+  document.getElementById('si-form-title').textContent = ticker ? `Research — ${ticker}` : 'Add Ticker';
+  document.getElementById('si-form-ticker').value = ticker || '';
+  document.getElementById('si-form-name').value = r.name || '';
+  document.getElementById('si-form-notes').value = r.notes || '';
+  document.getElementById('si-form-target').value = r.full_target_price || '';
+  document.getElementById('si-form-stop').value = r.stop_loss || '';
+  document.getElementById('si-form-reentry').value = r.reentry_low || '';
+  document.getElementById('si-form-watchlist').checked = (D.watchlist||[]).includes(ticker);
+  document.getElementById('si-fetch-status').textContent = '';
+  document.getElementById('si-fetched-preview').style.display = 'none';
+  document.getElementById('si-research-modal').style.display = 'flex';
+}
+
+async function siFetchLive() {
+  const ticker = document.getElementById('si-form-ticker').value.trim().toUpperCase();
+  if (!ticker) { toast('Enter a ticker first', 'error'); return; }
+  const btn = document.getElementById('si-fetch-btn');
+  const status = document.getElementById('si-fetch-status');
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+  status.textContent = 'Connecting to Yahoo Finance…';
+  try {
+    const res = await fetch(`/api/research-data/${ticker}/fetch?force=true`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Fetch failed');
+    // Populate form name
+    document.getElementById('si-form-name').value = data.name || ticker;
+    // Show preview
+    const score = data.score || {};
+    const lines = [];
+    if (data.current_price) lines.push(`💰 Price: ${data.currency||'$'}${data.current_price.toFixed(2)}`);
+    if (data.analyst_target) lines.push(`🎯 Target: ${data.analyst_target.toFixed(2)} (+${((data.analyst_target-data.current_price)/data.current_price*100).toFixed(1)}%)`);
+    if (data.pe) lines.push(`PE: ${data.pe.toFixed(1)}`);
+    if (data.beta) lines.push(`Beta: ${data.beta.toFixed(2)}`);
+    if (data.cagr_5yr) lines.push(`📈 5yr CAGR: ${data.cagr_5yr.toFixed(1)}%/yr`);
+    if (data.cagr_1yr) lines.push(`1yr: ${data.cagr_1yr.toFixed(1)}%`);
+    if (data.next_earnings) lines.push(`📅 Next ER: ${data.next_earnings}`);
+    if (score.verdict && score.verdict !== 'NO DATA') lines.push(`⚡ Signal: ${score.composite}/100 → ${score.verdict}`);
+    const prev = document.getElementById('si-fetched-preview');
+    prev.innerHTML = lines.map(l=>`<div>${l}</div>`).join('');
+    prev.style.display = 'block';
+    status.textContent = '✅ Data loaded';
+    // Cache locally
+    SI.research[ticker] = data;
+  } catch(e) {
+    status.textContent = `❌ ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Fetch Live Data';
+  }
+}
+
+async function siSaveResearch() {
+  const ticker = document.getElementById('si-form-ticker').value.trim().toUpperCase();
+  if (!ticker) { toast('Ticker is required', 'error'); return; }
+  const payload = {
+    name: document.getElementById('si-form-name').value.trim(),
+    notes: document.getElementById('si-form-notes').value.trim(),
+    full_target_price: parseFloat(document.getElementById('si-form-target').value) || null,
+    stop_loss: parseFloat(document.getElementById('si-form-stop').value) || null,
+    reentry_low: parseFloat(document.getElementById('si-form-reentry').value) || null,
+  };
+  try {
+    await fetch(`/api/research-data/${ticker}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('auth_token') },
+      body: JSON.stringify(payload)
+    });
+    const addWatch = document.getElementById('si-form-watchlist').checked;
+    if (addWatch) {
+      await fetch(`/api/watchlist/${ticker}`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      });
+    }
+    document.getElementById('si-research-modal').style.display = 'none';
+    toast(`${ticker} saved`, 'success');
+    renderIntelligence();
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+async function siDeleteTicker(ticker) {
+  if (!confirm(`Remove ${ticker} from Stock Intelligence?`)) return;
+  await fetch(`/api/research-data/${ticker}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+  });
+  toast(`${ticker} removed`);
+  renderIntelligence();
+}
+
+// ── Ticker Detail Panel ───────────────────────────────────────────────────────
+
+async function siOpenPanel(ticker) {
+  window.siCurrentTicker = ticker;
+  const panel = document.getElementById('si-ticker-panel');
+  const overlay = document.getElementById('si-panel-overlay');
+  const content = document.getElementById('sp-content');
+
+  document.getElementById('sp-ticker-title').textContent = ticker;
+  document.getElementById('sp-ticker-name').textContent = (SI.research[ticker]||{}).name || '…';
+  content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+  panel.style.display = 'block';
+  overlay.style.display = 'block';
+
+  try {
+    // Fetch latest data for this ticker
+    const res = await fetch(`/api/research-data/${ticker}/fetch`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Fetch failed');
+
+    const r = data;
+    const score = data.score || {};
+    SI.research[ticker] = r;
+    document.getElementById('sp-ticker-name').textContent = r.name || ticker;
+
+    const vs = siVerdictStyle(score.verdict || 'NO DATA');
+    const portfolioTickers = siGetPortfolioTickers();
+    const isOwned = portfolioTickers.has(ticker);
+
+    // Holding data
+    let holdingHtml = '';
+    if (isOwned && D && D.investments) {
+      for (const [bucket, items] of Object.entries(D.investments)) {
+        const h = (items||[]).find(i => (i.ticker||'').toUpperCase() === ticker);
+        if (h) {
+          const cost = parseFloat(h.avg_price || h.vest_price || 0);
+          const cur = parseFloat(h.current_price || 0);
+          const gainPct = cost > 0 ? ((cur - cost) / cost * 100).toFixed(1) : null;
+          // CAGR calculation
+          const holdingCagr = score.holding_cagr;
+          holdingHtml = `
+            <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
+              <div style="font-weight:600;margin-bottom:6px;font-size:11px;letter-spacing:0.5px;color:var(--text3)">YOUR POSITION (${bucket.toUpperCase()})</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                <div><div style="color:var(--text3)">Cost</div><div style="font-weight:600">${cost ? '£'+cost.toFixed(2) : '—'}</div></div>
+                <div><div style="color:var(--text3)">Current</div><div style="font-weight:600">${cur ? '£'+cur.toFixed(2) : '—'}</div></div>
+                <div><div style="color:var(--text3)">Your Gain</div><div style="font-weight:600;color:${gainPct>=0?'var(--teal)':'var(--rose)'}">${gainPct ? (gainPct>=0?'+':'')+gainPct+'%' : '—'}</div></div>
+                ${holdingCagr != null ? `<div style="grid-column:span 3"><div style="color:var(--text3)">Your Annualised Return</div><div style="font-weight:600;color:${holdingCagr>=0?'var(--teal)':'var(--rose)'}">${holdingCagr>=0?'+':''}${holdingCagr}%/yr</div></div>` : ''}
+              </div>
+            </div>`;
+          break;
+        }
+      }
+    }
+
+    // Signal bars
+    function scoreLine(label, val) {
+      if (val == null) return '';
+      const vs2 = val >= 70 ? 'var(--teal)' : val >= 40 ? 'var(--gold)' : 'var(--rose)';
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px">
+        <div style="width:80px;color:var(--text3)">${label}</div>
+        <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="width:${val}%;height:100%;background:${vs2};border-radius:3px"></div></div>
+        <div style="width:28px;text-align:right;font-weight:600">${val}</div>
+      </div>`;
+    }
+
+    // Analyst bar
+    const sb = r.analyst_strong_buy||0, b = r.analyst_buy||0, h2 = r.analyst_hold||0, s = r.analyst_sell||0, ss = r.analyst_strong_sell||0;
+    const totalA = sb+b+h2+s+ss;
+    let analystBar = '';
+    if (totalA > 0) {
+      const pct = (n,c) => `<div style="height:100%;width:${(n/totalA*100).toFixed(0)}%;background:${c};display:inline-block"></div>`;
+      analystBar = `<div style="margin-bottom:10px">
+        <div style="height:8px;border-radius:4px;overflow:hidden;display:flex;margin-bottom:4px">
+          ${pct(sb,'#22c55e')}${pct(b,'#4ade80')}${pct(h2,'#facc15')}${pct(s,'#f87171')}${pct(ss,'#ef4444')}
+        </div>
+        <div style="font-size:11px;color:var(--text3)">STR BUY ${sb} · BUY ${b} · HOLD ${h2} · SELL ${s+ss} · Total ${totalA} analysts</div>
+        ${r.analyst_target ? `<div style="font-size:12px;margin-top:4px">Targets: <span style="color:var(--text3)">${r.analyst_low ? '£'+r.analyst_low.toFixed(0)+' low →' : ''}</span> <strong>£${r.analyst_target.toFixed(0)} avg</strong> ${r.analyst_high ? '<span style="color:var(--text3)">→ £'+r.analyst_high.toFixed(0)+' high</span>' : ''}</div>` : ''}
+      </div>`;
+    }
+
+    // News
+    const news = (r.news||[]).slice(0,5);
+    const newsHtml = news.length > 0
+      ? news.map(n => {
+          const icon = n.impact === 'bullish' ? '🟢' : n.impact === 'bearish' ? '🔴' : '🟡';
+          return `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px">
+            <span>${icon}</span>
+            <div>
+              <div style="line-height:1.4">${n.headline}</div>
+              <div style="color:var(--text3);margin-top:2px">${n.date}${n.source?' · '+n.source:''}</div>
+            </div>
+          </div>`;
+        }).join('')
+      : '<div style="color:var(--text3);font-size:12px;padding:8px 0">No news loaded</div>';
+
+    // Warnings
+    const warnHtml = (score.warnings||[]).map(w =>
+      `<div style="padding:6px 10px;background:rgba(248,113,113,0.08);border-radius:4px;font-size:12px;color:var(--rose);margin-bottom:4px">⚠ ${w}</div>`
+    ).join('');
+
+    // Profit guide
+    let profitHtml = '';
+    if (r.full_target_price || r.stop_loss || r.reentry_low) {
+      profitHtml = `
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">PROFIT GUIDE</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px">
+            ${r.full_target_price ? `<div><div style="color:var(--text3)">Target</div><div style="font-weight:600;color:var(--teal)">£${r.full_target_price}</div></div>` : ''}
+            ${r.stop_loss ? `<div><div style="color:var(--text3)">Stop Loss</div><div style="font-weight:600;color:var(--rose)">£${r.stop_loss}</div></div>` : ''}
+            ${r.reentry_low ? `<div><div style="color:var(--text3)">Re-entry</div><div style="font-weight:600;color:var(--gold)">£${r.reentry_low}</div></div>` : ''}
+          </div>
+        </div>`;
+    }
+
+    // CAGR track record
+    const cagrHtml = (r.cagr_1yr!=null||r.cagr_3yr!=null||r.cagr_5yr!=null||r.cagr_10yr!=null)
+      ? `<div style="margin-bottom:14px">
+           <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">TRACK RECORD (STOCK CAGR)</div>
+           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px">
+             ${[['1yr',r.cagr_1yr],['3yr',r.cagr_3yr],['5yr',r.cagr_5yr],['10yr',r.cagr_10yr]].map(([l,v])=>v!=null?`<div><div style="color:var(--text3)">${l}</div><div style="font-weight:600;color:${v>=0?'var(--teal)':'var(--rose)'}">${v>=0?'+':''}${v}%</div></div>`:'').join('')}
+           </div>
+           ${r.alpha_5yr!=null?`<div style="font-size:11px;color:var(--text3);margin-top:6px">vs S&P 500 (5yr): <span style="color:${r.alpha_5yr>=0?'var(--teal)':'var(--rose)'};font-weight:600">${r.alpha_5yr>=0?'+':''}${r.alpha_5yr}%/yr alpha</span></div>`:''}
+         </div>`
+      : '';
+
+    content.innerHTML = `
+      <!-- Score banner -->
+      <div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <div style="font-family:var(--font-display);font-size:36px;font-weight:700;color:${vs.color}">${score.composite != null ? score.composite : '—'}</div>
+          <div>
+            <div style="background:${vs.bg};color:${vs.color};padding:4px 12px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:0.5px">${score.verdict||'NO DATA'}</div>
+            ${r.current_price ? `<div style="font-size:12px;color:var(--text3);margin-top:4px">£${r.current_price.toFixed(2)} ${r.analyst_target?'→ target £'+r.analyst_target.toFixed(2):''}${score.upside_pct!=null?' ('+(score.upside_pct>=0?'+':'')+score.upside_pct.toFixed(1)+'% upside)':''}</div>` : ''}
+          </div>
+        </div>
+        <!-- Score breakdown bars -->
+        <div style="background:var(--surface2);border-radius:8px;padding:12px">
+          ${scoreLine('Fundamental', score.fundamental)}
+          ${scoreLine('Technical', score.technical)}
+          ${scoreLine('Risk', score.risk)}
+          ${scoreLine('Momentum', score.momentum)}
+        </div>
+      </div>
+
+      ${warnHtml ? `<div style="margin-bottom:14px">${warnHtml}</div>` : ''}
+
+      ${holdingHtml}
+
+      ${cagrHtml}
+
+      <!-- Analyst Consensus -->
+      ${analystBar ? `<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">ANALYST CONSENSUS</div>${analystBar}</div>` : ''}
+
+      <!-- Earnings -->
+      ${r.next_earnings ? `
+        <div style="margin-bottom:14px;background:var(--surface2);border-radius:8px;padding:12px;font-size:12px">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:6px">EARNINGS</div>
+          <div>📅 ${r.next_earnings}${r.eps_estimate ? ' · EPS est: $'+r.eps_estimate.toFixed(2) : ''}${r.prev_eps ? ' (prev: $'+r.prev_eps.toFixed(2)+')' : ''}</div>
+          ${score.earnings_days!=null && score.earnings_days>=0 && score.earnings_days<=30 ? `<div style="color:#fb923c;margin-top:4px">⚡ ${score.earnings_days} days away — expect price movement</div>` : ''}
+        </div>` : ''}
+
+      <!-- Key metrics -->
+      ${[['PE',r.pe,'x'],['Fwd PE',r.fwd_pe,'x'],['PEG',r.peg,''],['Beta',r.beta,''],['Margin',r.margin,'%'],['ROE',r.roe,'%'],['Rev Growth',r.rev_growth,'%'],['D/E',r.debt_eq,'']].filter(([,v])=>v!=null).length > 0 ? `
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">KEY METRICS</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${[['PE',r.pe,'x'],['Fwd PE',r.fwd_pe,'x'],['PEG',r.peg,''],['Beta',r.beta,''],['Margin',r.margin,'%'],['ROE',r.roe,'%'],['Rev Growth',r.rev_growth,'%'],['D/E',r.debt_eq,'']].filter(([,v])=>v!=null).map(([l,v,u])=>
+              `<div style="background:var(--surface2);border-radius:6px;padding:5px 10px;font-size:12px"><span style="color:var(--text3)">${l}: </span><strong>${typeof v==='number'?v.toFixed(v>10?0:1):v}${u}</strong></div>`
+            ).join('')}
+          </div>
+        </div>` : ''}
+
+      ${profitHtml}
+
+      <!-- News -->
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:6px">RECENT NEWS</div>
+        ${newsHtml}
+      </div>
+
+      <!-- Notes -->
+      ${r.notes ? `<div style="margin-bottom:14px;background:var(--surface2);border-radius:8px;padding:12px;font-size:13px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">YOUR NOTES</div>${r.notes}</div>` : ''}
+
+      <div style="font-size:10px;color:var(--text3);margin-top:8px">Updated: ${r.updated||'never'} · Data from Yahoo Finance</div>
+    `;
+  } catch(e) {
+    content.innerHTML = `<div style="color:var(--rose);padding:20px">Error: ${e.message}<br><br><button class="btn btn-sm" onclick="siEditResearch('${ticker}')">Edit manually</button></div>`;
+  }
+}
+
+function siClosePanel() {
+  document.getElementById('si-ticker-panel').style.display = 'none';
+  document.getElementById('si-panel-overlay').style.display = 'none';
+  window.siCurrentTicker = null;
+}
+
+// ── AI Recommendations ────────────────────────────────────────────────────────
+
+async function siLoadRecommendations() {
+  const panel = document.getElementById('si-ai-panel');
+  const content = document.getElementById('si-ai-content');
+  panel.style.display = 'block';
+  content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">⏳ Asking Claude to analyse your portfolio gaps…</div>';
+
+  // Scroll to panel
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const res = await fetch('/api/ai-recommendations', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+    });
+    const recs = await res.json();
+    if (!res.ok) throw new Error(recs.error || 'AI error');
+    if (!Array.isArray(recs) || recs.length === 0) {
+      content.innerHTML = '<div style="color:var(--text3);padding:10px">No recommendations generated. Add more holdings to improve analysis.</div>';
+      return;
+    }
+    content.innerHTML = recs.map(rec => `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <span style="font-family:var(--font-display);font-size:18px;font-weight:700">${rec.ticker}</span>
+            <span style="font-size:13px;color:var(--text3);margin-left:8px">${rec.name||''}</span>
+          </div>
+          ${rec.score_estimate ? `<span style="background:rgba(20,184,166,0.1);color:var(--teal);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600">~${rec.score_estimate}/100</span>` : ''}
+        </div>
+        ${rec.gap ? `<div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;letter-spacing:0.5px">GAP: ${rec.gap}</div>` : ''}
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">${rec.reason||''}</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" onclick="siEditResearch('${rec.ticker}')" style="background:var(--gold-dim);color:var(--gold);border:1px solid var(--gold)">+ Track</button>
+          <button class="btn btn-sm" onclick="siOpenPanel('${rec.ticker}')" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)">View Analysis</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    content.innerHTML = `<div style="color:var(--rose);padding:10px">Error: ${e.message}</div>`;
+  }
+}
+
+async function siRefreshAll() {
+  if (!confirm('Refresh all tickers from Yahoo Finance? This may take a minute.')) return;
+  toast('Refreshing all tickers…');
+  // Refresh each ticker sequentially
+  const tickers = Object.keys(SI.research);
+  for (const ticker of tickers) {
+    try {
+      await fetch(`/api/research-data/${ticker}/fetch?force=true`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('auth_token') }
+      });
+    } catch(e) { /* continue */ }
+  }
+  toast('Refresh complete');
+  renderIntelligence();
+}
+
 </script>
 
 <!-- RSU Modal -->

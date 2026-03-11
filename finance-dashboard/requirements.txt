@@ -31,3 +31,4 @@ requests==2.32.3
 SQLAlchemy
 psycopg2-binary
 Pillow
+yfinance

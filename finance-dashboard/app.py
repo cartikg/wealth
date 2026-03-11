@@ -7,7 +7,9 @@ import os
 import csv
 import io
 import uuid
-from datetime import datetime, timedelta
+import threading
+import math
+from datetime import datetime, timedelta, date
 from anthropic import Anthropic
 import requests
 from sqlalchemy import create_engine
@@ -230,6 +232,12 @@ def migrate_data(data):
             'state_pension_age': 67,
             'state_pension_annual': 11502,
         }
+
+    # Stock Intelligence: research data store + watchlist
+    if 'research_data' not in data:
+        data['research_data'] = {}
+    if 'watchlist' not in data:
+        data['watchlist'] = []
 
     return data
 
@@ -4894,6 +4902,850 @@ def generate_wealth_report():
         'top_holdings': holdings[:15],
         'nw_trend': nw_trend,
     })
+
+
+# ── Stock Intelligence ─────────────────────────────────────────────────────────
+
+def _yf_safe(info, *keys, default=None):
+    """Safely extract a value from yfinance info dict."""
+    for k in keys:
+        v = info.get(k)
+        if v is not None and v != 'N/A' and not (isinstance(v, float) and math.isnan(v)):
+            return v
+    return default
+
+def fetch_and_cache_ticker(ticker, force=False):
+    """
+    Fetch live data from yfinance for a ticker and cache in research_data.
+    Returns the updated research dict or raises on error.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        raise RuntimeError('yfinance not installed. Run: pip install yfinance')
+
+    data = load_data()
+    rd = data.setdefault('research_data', {})
+    existing = rd.get(ticker.upper(), {})
+    today_str = date.today().isoformat()
+
+    # Skip if fresh (< 24h) unless forced
+    if not force and existing.get('updated') == today_str and existing.get('current_price'):
+        return existing
+
+    t = yf.Ticker(ticker)
+    info = t.info or {}
+
+    # --- Price & valuation ---
+    price = _yf_safe(info, 'currentPrice', 'regularMarketPrice', 'previousClose', default=0)
+    pe = _yf_safe(info, 'trailingPE')
+    fwd_pe = _yf_safe(info, 'forwardPE')
+    peg = _yf_safe(info, 'pegRatio')
+    ps = _yf_safe(info, 'priceToSalesTrailing12Months')
+    pb = _yf_safe(info, 'priceToBook')
+    mkt_cap = _yf_safe(info, 'marketCap', default=0)
+    sector = _yf_safe(info, 'sector', default=existing.get('sector', ''))
+    name = _yf_safe(info, 'longName', 'shortName', default=existing.get('name', ticker))
+    currency = _yf_safe(info, 'currency', default='USD')
+    div_yield = _yf_safe(info, 'dividendYield', default=0)
+
+    # --- Beta & 52w range ---
+    beta = _yf_safe(info, 'beta', default=None)
+    w52_high = _yf_safe(info, 'fiftyTwoWeekHigh', default=None)
+    w52_low = _yf_safe(info, 'fiftyTwoWeekLow', default=None)
+
+    # --- Analyst targets ---
+    analyst_target = _yf_safe(info, 'targetMeanPrice')
+    analyst_high = _yf_safe(info, 'targetHighPrice')
+    analyst_low = _yf_safe(info, 'targetLowPrice')
+    analyst_strong_buy = _yf_safe(info, 'recommendationKey', default=None)
+    analyst_rec = info.get('recommendationMean')
+
+    # Buy/Hold/Sell counts from analyst grades
+    a_str_buy = _yf_safe(info, 'numberOfAnalystOpinions', default=0) or 0
+    # Try to get breakdown from upgrades_downgrades_history or fallback
+    try:
+        recs = t.recommendations
+        if recs is not None and not recs.empty:
+            latest = recs.iloc[-1] if len(recs) else {}
+            sb = int(latest.get('strongBuy', 0) or 0)
+            b = int(latest.get('buy', 0) or 0)
+            h = int(latest.get('hold', 0) or 0)
+            s = int(latest.get('sell', 0) or 0)
+            ss = int(latest.get('strongSell', 0) or 0)
+        else:
+            sb = b = h = s = ss = 0
+    except Exception:
+        sb = b = h = s = ss = 0
+
+    # --- Fundamentals ---
+    rev_growth = _yf_safe(info, 'revenueGrowth')
+    if rev_growth is not None:
+        rev_growth = round(rev_growth * 100, 1)
+    eps_growth = _yf_safe(info, 'earningsGrowth')
+    if eps_growth is not None:
+        eps_growth = round(eps_growth * 100, 1)
+    margin = _yf_safe(info, 'profitMargins')
+    if margin is not None:
+        margin = round(margin * 100, 1)
+    roe = _yf_safe(info, 'returnOnEquity')
+    if roe is not None:
+        roe = round(roe * 100, 1)
+    roic = _yf_safe(info, 'returnOnAssets')
+    if roic is not None:
+        roic = round(roic * 100, 1)
+    debt_eq = _yf_safe(info, 'debtToEquity')
+    fcf_yield = _yf_safe(info, 'freeCashflow')
+    current_ratio = _yf_safe(info, 'currentRatio')
+
+    # --- Earnings ---
+    next_earnings = None
+    earnings_volatility = existing.get('earnings_volatility', 'medium')
+    eps_estimate = _yf_safe(info, 'forwardEps')
+    prev_eps = _yf_safe(info, 'trailingEps')
+    eps_surprise = None
+    try:
+        cal = t.calendar
+        if cal is not None and not cal.empty:
+            ec = cal.get('Earnings Date')
+            if ec is not None:
+                ed = ec[0] if hasattr(ec, '__iter__') and not isinstance(ec, str) else ec
+                if hasattr(ed, 'date'):
+                    ed = ed.date()
+                next_earnings = str(ed)
+    except Exception:
+        pass
+
+    # --- Historical CAGR from price history ---
+    cagr_1yr = cagr_3yr = cagr_5yr = cagr_10yr = None
+    alpha_1yr = alpha_5yr = None
+    ret_1m = ret_3m = ret_ytd = None
+    try:
+        hist = t.history(period='10y', auto_adjust=True)
+        if hist is not None and not hist.empty:
+            prices = hist['Close'].dropna()
+            now_p = float(prices.iloc[-1])
+            today_dt = prices.index[-1]
+
+            def _cagr(years):
+                past_dt = today_dt - timedelta(days=int(years * 365.25))
+                past_prices = prices[prices.index >= past_dt]
+                if len(past_prices) < 2:
+                    return None
+                past_p = float(past_prices.iloc[0])
+                if past_p <= 0:
+                    return None
+                return round(((now_p / past_p) ** (1 / years) - 1) * 100, 1)
+
+            def _ret(days):
+                past_dt = today_dt - timedelta(days=days)
+                past_prices = prices[prices.index >= past_dt]
+                if len(past_prices) < 2:
+                    return None
+                past_p = float(past_prices.iloc[0])
+                if past_p <= 0:
+                    return None
+                return round((now_p / past_p - 1) * 100, 1)
+
+            cagr_1yr = _cagr(1)
+            cagr_3yr = _cagr(3)
+            cagr_5yr = _cagr(5)
+            cagr_10yr = _cagr(10)
+            ret_1m = _ret(30)
+            ret_3m = _ret(90)
+
+            # YTD return
+            year_start = prices[prices.index >= prices.index[-1].replace(month=1, day=1)]
+            if len(year_start) > 0:
+                ret_ytd = round((now_p / float(year_start.iloc[0]) - 1) * 100, 1)
+
+            # vs S&P 500 alpha
+            try:
+                sp = yf.Ticker('^GSPC')
+                sp_hist = sp.history(period='5y', auto_adjust=True)
+                if sp_hist is not None and not sp_hist.empty:
+                    sp_prices = sp_hist['Close'].dropna()
+                    sp_now = float(sp_prices.iloc[-1])
+                    sp_today_dt = sp_prices.index[-1]
+
+                    def _sp_cagr(years):
+                        past_dt = sp_today_dt - timedelta(days=int(years * 365.25))
+                        pp = sp_prices[sp_prices.index >= past_dt]
+                        if len(pp) < 2:
+                            return None
+                        sp_past = float(pp.iloc[0])
+                        if sp_past <= 0:
+                            return None
+                        return round(((sp_now / sp_past) ** (1 / years) - 1) * 100, 1)
+
+                    sp_1yr = _sp_cagr(1)
+                    sp_5yr = _sp_cagr(5)
+                    if cagr_1yr is not None and sp_1yr is not None:
+                        alpha_1yr = round(cagr_1yr - sp_1yr, 1)
+                    if cagr_5yr is not None and sp_5yr is not None:
+                        alpha_5yr = round(cagr_5yr - sp_5yr, 1)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # --- News & sentiment ---
+    news_list = existing.get('news', [])
+    try:
+        raw_news = t.news or []
+        new_news = []
+        for item in raw_news[:8]:
+            headline = item.get('title', '')
+            pub_dt = item.get('providerPublishTime')
+            if pub_dt:
+                news_date = datetime.utcfromtimestamp(pub_dt).strftime('%Y-%m-%d')
+            else:
+                news_date = today_str
+            # Check if already stored
+            if not any(n.get('headline') == headline for n in news_list):
+                new_news.append({
+                    'date': news_date,
+                    'headline': headline,
+                    'source': item.get('publisher', ''),
+                    'impact': 'neutral',  # will classify below
+                    'url': item.get('link', '')
+                })
+
+        # Classify new news via Claude Haiku if available
+        if new_news:
+            try:
+                client = get_anthropic_client()
+                headlines_text = '\n'.join([f"- {n['headline']}" for n in new_news])
+                resp = client.messages.create(
+                    model='claude-haiku-4-5-20251001',
+                    max_tokens=200,
+                    messages=[{
+                        'role': 'user',
+                        'content': f'Classify each headline as bullish, neutral, or bearish for {ticker} stock. Reply with ONLY a JSON array of strings like ["bullish","neutral","bearish"]. Headlines:\n{headlines_text}'
+                    }]
+                )
+                classifications = json.loads(resp.content[0].text.strip())
+                for i, n in enumerate(new_news):
+                    if i < len(classifications):
+                        n['impact'] = classifications[i]
+            except Exception:
+                pass
+
+        # Prepend new news, keep last 10
+        news_list = new_news + news_list
+        news_list = news_list[:10]
+    except Exception:
+        pass
+
+    # --- Build / update research entry ---
+    entry = {
+        **existing,
+        'name': name,
+        'ticker': ticker.upper(),
+        'sector': sector,
+        'currency': currency,
+        'current_price': float(price) if price else None,
+        'analyst_target': analyst_target,
+        'analyst_high': analyst_high,
+        'analyst_low': analyst_low,
+        'analyst_rec_mean': analyst_rec,
+        'analyst_strong_buy': sb,
+        'analyst_buy': b,
+        'analyst_hold': h,
+        'analyst_sell': s,
+        'analyst_strong_sell': ss,
+        'beta': beta,
+        'w52_high': w52_high,
+        'w52_low': w52_low,
+        'pe': pe,
+        'fwd_pe': fwd_pe,
+        'peg': peg,
+        'ps': ps,
+        'pb': pb,
+        'mkt_cap': mkt_cap,
+        'div_yield': round(div_yield * 100, 2) if div_yield else 0,
+        'rev_growth': rev_growth,
+        'eps_growth': eps_growth,
+        'margin': margin,
+        'roe': roe,
+        'roic': roic,
+        'debt_eq': debt_eq,
+        'current_ratio': current_ratio,
+        'cagr_1yr': cagr_1yr,
+        'cagr_3yr': cagr_3yr,
+        'cagr_5yr': cagr_5yr,
+        'cagr_10yr': cagr_10yr,
+        'alpha_1yr': alpha_1yr,
+        'alpha_5yr': alpha_5yr,
+        'ret_1m': ret_1m,
+        'ret_3m': ret_3m,
+        'ret_ytd': ret_ytd,
+        'next_earnings': existing.get('next_earnings') if not next_earnings else next_earnings,
+        'earnings_volatility': earnings_volatility,
+        'eps_estimate': eps_estimate,
+        'prev_eps': prev_eps,
+        'news': news_list,
+        'updated': today_str,
+    }
+    # Preserve user-entered fields
+    for key in ['notes', 'catalysts', 'risks', 'profit_target_pct', 'full_target_price',
+                'stop_loss', 'reentry_low', 'reentry_high', 'eps_surprise_pct']:
+        if key not in entry and key in existing:
+            entry[key] = existing[key]
+
+    rd[ticker.upper()] = entry
+    save_data(data)
+    return entry
+
+
+def batch_refresh_all_tickers(data):
+    """Background batch refresh — fetch yfinance data for all tickers in research_data."""
+    rd = data.get('research_data', {})
+    today_str = date.today().isoformat()
+    for ticker, rec in list(rd.items()):
+        if rec.get('updated') != today_str:
+            try:
+                fetch_and_cache_ticker(ticker, force=False)
+            except Exception as e:
+                print(f'[batch_refresh] {ticker}: {e}')
+
+
+def compute_holding_cagr(holding):
+    """Annualised CAGR from a holding's avg_price, current_price, purchase_date."""
+    try:
+        avg = float(holding.get('avg_price') or holding.get('vest_price') or 0)
+        cur = float(holding.get('current_price') or 0)
+        pd_str = holding.get('purchase_date') or holding.get('vest_date') or ''
+        if not avg or not cur or not pd_str:
+            return None
+        purchase_dt = datetime.strptime(pd_str[:10], '%Y-%m-%d')
+        years = (datetime.now() - purchase_dt).days / 365.25
+        if years < 0.01:
+            return None
+        return round(((cur / avg) ** (1 / years) - 1) * 100, 1)
+    except Exception:
+        return None
+
+
+def calculate_stock_score(ticker, research, portfolio_holdings=None, total_portfolio_value=0):
+    """
+    Score a ticker 0-100 from available research data + portfolio context.
+    Returns dict with composite, fundamental, technical, risk, momentum scores + verdict.
+    """
+    r = research
+    scores = {}
+    breakdown = {}
+
+    # ── Fundamental score (40%) ───────────────────────────────────────────────
+    f_points = 0
+    f_max = 0
+
+    # Upside to analyst target
+    price = r.get('current_price') or 0
+    target = r.get('analyst_target') or 0
+    if price > 0 and target > 0:
+        upside_pct = (target - price) / price * 100
+        if upside_pct >= 30:
+            f_points += 20
+        elif upside_pct >= 15:
+            f_points += 14
+        elif upside_pct >= 5:
+            f_points += 8
+        elif upside_pct < 0:
+            f_points += 0
+        else:
+            f_points += 4
+        f_max += 20
+        breakdown['upside'] = round(upside_pct, 1)
+
+    # Analyst consensus
+    sb = r.get('analyst_strong_buy', 0) or 0
+    b = r.get('analyst_buy', 0) or 0
+    h = r.get('analyst_hold', 0) or 0
+    s = r.get('analyst_sell', 0) or 0
+    ss = r.get('analyst_strong_sell', 0) or 0
+    total_analysts = sb + b + h + s + ss
+    if total_analysts > 0:
+        bull_pct = (sb + b) / total_analysts * 100
+        if bull_pct >= 75:
+            f_points += 15
+        elif bull_pct >= 50:
+            f_points += 10
+        elif bull_pct >= 30:
+            f_points += 5
+        f_max += 15
+
+    # PE relative to growth (PEG)
+    peg = r.get('peg')
+    if peg is not None:
+        if peg < 1:
+            f_points += 12
+        elif peg < 1.5:
+            f_points += 8
+        elif peg < 2.5:
+            f_points += 4
+        elif peg > 4:
+            f_points += 0
+        else:
+            f_points += 2
+        f_max += 12
+
+    # Revenue growth
+    rev_g = r.get('rev_growth')
+    if rev_g is not None:
+        if rev_g >= 30:
+            f_points += 10
+        elif rev_g >= 15:
+            f_points += 7
+        elif rev_g >= 5:
+            f_points += 4
+        elif rev_g < 0:
+            f_points += 0
+        else:
+            f_points += 2
+        f_max += 10
+
+    # Profit margin
+    margin = r.get('margin')
+    if margin is not None:
+        if margin >= 30:
+            f_points += 8
+        elif margin >= 15:
+            f_points += 5
+        elif margin >= 5:
+            f_points += 2
+        elif margin < 0:
+            f_points += 0
+        else:
+            f_points += 1
+        f_max += 8
+
+    # ROE
+    roe = r.get('roe')
+    if roe is not None:
+        if roe >= 30:
+            f_points += 8
+        elif roe >= 15:
+            f_points += 5
+        elif roe >= 5:
+            f_points += 2
+        elif roe < 0:
+            f_points += 0
+        f_max += 8
+
+    # Debt/Equity
+    de = r.get('debt_eq')
+    if de is not None:
+        if de < 30:
+            f_points += 7
+        elif de < 80:
+            f_points += 4
+        elif de < 150:
+            f_points += 2
+        else:
+            f_points += 0
+        f_max += 7
+
+    fundamental = round(f_points / f_max * 100) if f_max > 0 else None
+
+    # ── Technical score (25%) ─────────────────────────────────────────────────
+    t_points = 0
+    t_max = 0
+
+    # 52-week position (how far from high = potential upside)
+    w52h = r.get('w52_high')
+    w52l = r.get('w52_low')
+    if w52h and w52l and price > 0:
+        range_pct = (price - w52l) / (w52h - w52l) * 100 if (w52h - w52l) > 0 else 50
+        # Moderate position (30-70% of range) is best
+        if 30 <= range_pct <= 70:
+            t_points += 15
+        elif 20 <= range_pct <= 85:
+            t_points += 10
+        elif range_pct < 20:
+            t_points += 5  # oversold — could recover or falling knife
+        else:
+            t_points += 3  # near 52w high — extended
+        t_max += 15
+        breakdown['52w_position'] = round(range_pct, 1)
+
+    # Short-term momentum
+    ret_1m = r.get('ret_1m')
+    if ret_1m is not None:
+        if 0 < ret_1m <= 15:
+            t_points += 10
+        elif ret_1m > 15:
+            t_points += 6  # extended
+        elif -10 <= ret_1m < 0:
+            t_points += 6  # mild pullback, potential entry
+        else:
+            t_points += 2  # steep decline
+        t_max += 10
+
+    technical = round(t_points / t_max * 100) if t_max > 0 else None
+
+    # ── Risk score (20%) ─────────────────────────────────────────────────────
+    risk_points = 0
+    risk_max = 0
+
+    # Beta
+    beta = r.get('beta')
+    if beta is not None:
+        if 0.5 <= beta <= 1.2:
+            risk_points += 20
+        elif 1.2 < beta <= 1.8:
+            risk_points += 12
+        elif beta > 1.8:
+            risk_points += 6
+        elif beta < 0.5:
+            risk_points += 15  # defensive
+        risk_max += 20
+
+    # Earnings proximity (risk flag)
+    earnings_days = None
+    if r.get('next_earnings'):
+        try:
+            ne = datetime.strptime(r['next_earnings'][:10], '%Y-%m-%d')
+            earnings_days = (ne - datetime.now()).days
+            if 0 <= earnings_days <= 7:
+                risk_points += 2  # imminent — high risk
+            elif 7 < earnings_days <= 21:
+                risk_points += 5  # coming up
+            else:
+                risk_points += 10
+            risk_max += 10
+        except Exception:
+            pass
+
+    # Concentration risk (for held stocks)
+    if portfolio_holdings and total_portfolio_value > 0:
+        holding_value = 0
+        for h in portfolio_holdings:
+            if h.get('ticker', '').upper() == ticker.upper():
+                holding_value += float(h.get('current_value', 0) or 0)
+        conc_pct = holding_value / total_portfolio_value * 100
+        if conc_pct >= 30:
+            risk_points += 0  # extreme concentration
+        elif conc_pct >= 15:
+            risk_points += 3
+        elif conc_pct >= 5:
+            risk_points += 7
+        else:
+            risk_points += 10
+        risk_max += 10
+
+    risk = round(risk_points / risk_max * 100) if risk_max > 0 else None
+
+    # ── Momentum / Track Record score (15%) ──────────────────────────────────
+    m_points = 0
+    m_max = 0
+
+    # 5yr CAGR
+    cagr5 = r.get('cagr_5yr')
+    if cagr5 is not None:
+        if cagr5 >= 30:
+            m_points += 25
+        elif cagr5 >= 15:
+            m_points += 18
+        elif cagr5 >= 7:
+            m_points += 10
+        elif cagr5 >= 0:
+            m_points += 4
+        else:
+            m_points += 0
+        m_max += 25
+
+    # Alpha vs S&P over 5yr
+    alpha5 = r.get('alpha_5yr')
+    if alpha5 is not None:
+        if alpha5 >= 10:
+            m_points += 15
+        elif alpha5 >= 3:
+            m_points += 10
+        elif alpha5 >= 0:
+            m_points += 6
+        else:
+            m_points += 2
+        m_max += 15
+
+    momentum = round(m_points / m_max * 100) if m_max > 0 else None
+
+    # ── Composite (weighted average of available components) ─────────────────
+    weights = {'fundamental': 0.40, 'technical': 0.25, 'risk': 0.20, 'momentum': 0.15}
+    component_scores = {
+        'fundamental': fundamental,
+        'technical': technical,
+        'risk': risk,
+        'momentum': momentum
+    }
+    avail = {k: v for k, v in component_scores.items() if v is not None}
+    if avail:
+        total_weight = sum(weights[k] for k in avail)
+        composite = sum(v * weights[k] / total_weight for k, v in avail.items())
+        composite = round(min(100, max(0, composite)))
+    else:
+        composite = None
+
+    # ── Verdict ──────────────────────────────────────────────────────────────
+    if composite is None:
+        verdict = 'NO DATA'
+    elif composite >= 85:
+        verdict = 'STRONG BUY'
+    elif composite >= 70:
+        verdict = 'BUY'
+    elif composite >= 55:
+        verdict = 'HOLD'
+    elif composite >= 40:
+        verdict = 'TRIM'
+    elif composite >= 25:
+        verdict = 'REDUCE'
+    else:
+        verdict = 'EXIT'
+
+    # ── Warnings ─────────────────────────────────────────────────────────────
+    warnings = []
+    if beta and beta > 2.0:
+        warnings.append(f'High beta ({beta:.1f}) — volatile')
+    if earnings_days is not None and 0 <= earnings_days <= 14:
+        warnings.append(f'Earnings in {earnings_days}d — expect volatility')
+    if portfolio_holdings and total_portfolio_value > 0:
+        for h in portfolio_holdings:
+            if h.get('ticker', '').upper() == ticker.upper():
+                val = float(h.get('current_value', 0) or 0)
+                pct = val / total_portfolio_value * 100
+                if pct >= 20:
+                    warnings.append(f'High concentration: {pct:.0f}% of portfolio')
+
+    upside = breakdown.get('upside')
+
+    return {
+        'ticker': ticker.upper(),
+        'composite': composite,
+        'fundamental': fundamental,
+        'technical': technical,
+        'risk': risk,
+        'momentum': momentum,
+        'verdict': verdict,
+        'warnings': warnings,
+        'upside_pct': upside,
+        'cagr_5yr': r.get('cagr_5yr'),
+        'next_earnings': r.get('next_earnings'),
+        'earnings_days': earnings_days,
+    }
+
+
+def generate_ai_recommendations(portfolio_data, research_data):
+    """Generate stock recommendations based on portfolio gaps using Claude."""
+    client = get_anthropic_client()
+
+    # Build portfolio summary
+    holdings_summary = []
+    for bucket, items in portfolio_data.get('investments', {}).items():
+        for item in items:
+            ticker = item.get('ticker', item.get('symbol', ''))
+            if ticker:
+                val = item.get('current_value', item.get('value_gbp', 0)) or 0
+                holdings_summary.append(f'{ticker} ({bucket.upper()}, £{val:,.0f})')
+
+    owned = set()
+    for bucket, items in portfolio_data.get('investments', {}).items():
+        for item in items:
+            t = item.get('ticker', '')
+            if t:
+                owned.add(t.upper())
+
+    watched = portfolio_data.get('watchlist', [])
+    sectors = set()
+    for bucket, items in portfolio_data.get('investments', {}).items():
+        for item in items:
+            s = item.get('sector', '')
+            if s:
+                sectors.add(s)
+
+    prompt = f"""You are a portfolio analyst. The user has this UK-based investment portfolio:
+Holdings: {', '.join(holdings_summary[:30]) if holdings_summary else 'none'}
+Sectors covered: {', '.join(sectors) if sectors else 'unknown'}
+Already watching: {', '.join(watched) if watched else 'none'}
+
+Identify 3-5 specific stock/ETF tickers they are MISSING that would improve their portfolio.
+Focus on gaps: diversification, sectors, geographies, or specific high-quality names.
+Respond ONLY with a JSON array like:
+[{{"ticker":"GOOGL","name":"Alphabet","reason":"Missing big-tech AI leader despite holding MSFT/AMZN","gap":"AI/Cloud concentration","score_estimate":82}},...]
+
+Use real, widely-traded tickers. Max 5 items."""
+
+    resp = client.messages.create(
+        model='claude-haiku-4-5-20251001',
+        max_tokens=600,
+        messages=[{'role': 'user', 'content': prompt}]
+    )
+    text = resp.content[0].text.strip()
+    # Extract JSON array from response
+    start = text.find('[')
+    end = text.rfind(']') + 1
+    if start >= 0 and end > start:
+        recs = json.loads(text[start:end])
+    else:
+        recs = []
+    return recs
+
+
+# ── Stock Intelligence: API Endpoints ─────────────────────────────────────────
+
+@app.route('/api/research-data', methods=['GET'])
+def get_all_research():
+    data = load_data()
+    return jsonify(data.get('research_data', {}))
+
+
+@app.route('/api/research-data/<ticker>', methods=['POST'])
+def upsert_research(ticker):
+    data = load_data()
+    rd = data.setdefault('research_data', {})
+    ticker = ticker.upper()
+    body = request.get_json(force=True) or {}
+    existing = rd.get(ticker, {})
+    existing.update(body)
+    existing['ticker'] = ticker
+    if 'updated' not in existing:
+        existing['updated'] = date.today().isoformat()
+    rd[ticker] = existing
+    save_data(data)
+    return jsonify(rd[ticker])
+
+
+@app.route('/api/research-data/<ticker>', methods=['DELETE'])
+def delete_research(ticker):
+    data = load_data()
+    rd = data.setdefault('research_data', {})
+    ticker = ticker.upper()
+    rd.pop(ticker, None)
+    # Also remove from watchlist
+    data['watchlist'] = [w for w in data.get('watchlist', []) if w.upper() != ticker]
+    save_data(data)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/research-data/<ticker>/news', methods=['POST'])
+def add_news_event(ticker):
+    data = load_data()
+    rd = data.setdefault('research_data', {})
+    ticker = ticker.upper()
+    body = request.get_json(force=True) or {}
+    entry = rd.setdefault(ticker, {'ticker': ticker})
+    news = entry.setdefault('news', [])
+    news.insert(0, {
+        'date': body.get('date', date.today().isoformat()),
+        'headline': body.get('headline', ''),
+        'impact': body.get('impact', 'neutral'),
+        'source': body.get('source', ''),
+    })
+    entry['news'] = news[:10]
+    save_data(data)
+    return jsonify(entry)
+
+
+@app.route('/api/research-data/<ticker>/fetch', methods=['POST'])
+def fetch_ticker_route(ticker):
+    ticker = ticker.upper()
+    force = request.args.get('force', 'false').lower() == 'true'
+    try:
+        entry = fetch_and_cache_ticker(ticker, force=force)
+        data = load_data()
+        # Compute score
+        all_holdings = []
+        total_val = 0
+        for bucket, items in data.get('investments', {}).items():
+            for h in items:
+                all_holdings.append(h)
+                total_val += float(h.get('current_value', h.get('value_gbp', 0)) or 0)
+        score = calculate_stock_score(ticker, entry, all_holdings, total_val)
+        return jsonify({**entry, 'score': score})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scores', methods=['GET'])
+def get_scores():
+    data = load_data()
+    rd = data.get('research_data', {})
+    all_holdings = []
+    total_val = 0
+    for bucket, items in data.get('investments', {}).items():
+        for h in items:
+            all_holdings.append(h)
+            total_val += float(h.get('current_value', h.get('value_gbp', 0)) or 0)
+
+    results = []
+    for ticker, research in rd.items():
+        score = calculate_stock_score(ticker, research, all_holdings, total_val)
+        # Holding CAGR
+        for h in all_holdings:
+            if h.get('ticker', '').upper() == ticker:
+                score['holding_cagr'] = compute_holding_cagr(h)
+                score['holding_value'] = float(h.get('current_value', 0) or 0)
+                score['holding_gain_pct'] = float(h.get('gain_pct', 0) or 0)
+                break
+        score['name'] = research.get('name', ticker)
+        score['current_price'] = research.get('current_price')
+        score['analyst_target'] = research.get('analyst_target')
+        score['cagr_5yr'] = research.get('cagr_5yr')
+        score['updated'] = research.get('updated')
+        results.append(score)
+
+    results.sort(key=lambda x: (x.get('composite') or -1), reverse=True)
+    return jsonify(results)
+
+
+@app.route('/api/ai-recommendations', methods=['GET'])
+def ai_recommendations():
+    try:
+        data = load_data()
+        recs = generate_ai_recommendations(data, data.get('research_data', {}))
+        return jsonify(recs)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/watchlist', methods=['GET'])
+def get_watchlist():
+    data = load_data()
+    return jsonify(data.get('watchlist', []))
+
+
+@app.route('/api/watchlist/<ticker>', methods=['POST'])
+def add_to_watchlist(ticker):
+    data = load_data()
+    ticker = ticker.upper()
+    wl = data.setdefault('watchlist', [])
+    if ticker not in wl:
+        wl.append(ticker)
+    save_data(data)
+    return jsonify({'watchlist': wl})
+
+
+@app.route('/api/watchlist/<ticker>', methods=['DELETE'])
+def remove_from_watchlist(ticker):
+    data = load_data()
+    ticker = ticker.upper()
+    wl = data.setdefault('watchlist', [])
+    data['watchlist'] = [w for w in wl if w.upper() != ticker]
+    save_data(data)
+    return jsonify({'watchlist': data['watchlist']})
+
+
+# ── Background startup refresh ────────────────────────────────────────────────
+def _startup_refresh():
+    try:
+        data = load_data()
+        batch_refresh_all_tickers(data)
+    except Exception as e:
+        print(f'[startup_refresh] {e}')
+
+_t = threading.Thread(target=_startup_refresh, daemon=True)
+_t.start()
 
 
 if __name__ == '__main__':
