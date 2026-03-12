@@ -90,7 +90,7 @@ def auth_status():
 
 @app.route('/api/auth/setup', methods=['POST'])
 def auth_setup():
-    body = request.get_json(force=True)
+    body = request.get_json(force=True, silent=True)
     password = body.get('password', '').strip()
     if not password or len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
@@ -101,7 +101,7 @@ def auth_setup():
 
 @app.route('/api/auth/login', methods=['POST'])
 def auth_login():
-    body = request.get_json(force=True)
+    body = request.get_json(force=True, silent=True)
     password = body.get('password', '').strip()
     if not password:
         return jsonify({'error': 'Password required'}), 400
@@ -3819,7 +3819,7 @@ def t212_status():
 
 @app.route('/api/t212/test', methods=['POST'])
 def t212_test():
-    body    = request.get_json(force=True) or {}
+    body    = request.get_json(force=True, silent=True) or {}
     data    = load_data()
     conn_id = body.get('id')
     if conn_id:
@@ -3859,10 +3859,13 @@ def _t212_sync_one(conn, inv, data):
     positions  = raw if isinstance(raw, list) else raw.get('items', [])
     synced_now = datetime.now().isoformat()
 
-    # Build set of tickers currently live in T212
+    # Build set of tickers currently live in T212 (supports old & new API format)
     live_tickers = {
-        t212_strip_ticker(pos.get('ticker', '').strip()).upper()
-        for pos in positions if pos.get('ticker')
+        t212_strip_ticker(
+            (pos.get('ticker') or (pos.get('instrument') or {}).get('ticker') or '').strip()
+        ).upper()
+        for pos in positions
+        if pos.get('ticker') or (pos.get('instrument') or {}).get('ticker')
     }
 
     # ── Remove positions that are no longer in T212 (closed / sold) ───────────
@@ -3882,18 +3885,25 @@ def _t212_sync_one(conn, inv, data):
     added = updated = 0
 
     for pos in positions:
-        t212_ticker = (pos.get('ticker') or '').strip()
+        # Support both old T212 API format (pos['ticker']) and new format (pos['instrument']['ticker'])
+        instrument   = pos.get('instrument') or {}
+        t212_ticker  = (pos.get('ticker') or instrument.get('ticker') or '').strip()
         if not t212_ticker:
             continue
 
-        ticker    = t212_strip_ticker(t212_ticker)
-        quantity  = float(pos.get('quantity', 0))
-        avg_price = float(pos.get('averagePrice', 0))
-        cur_price = float(pos.get('currentPrice', 0))
-        ppl       = float(pos.get('ppl', 0))
-        invested  = round(avg_price * quantity, 2)
-        cur_value = round(cur_price * quantity, 2)
-        gain_pct  = round(ppl / invested * 100, 2) if invested else 0
+        ticker     = t212_strip_ticker(t212_ticker)
+        name       = instrument.get('name') or pos.get('name') or ticker
+        currency   = instrument.get('currency') or pos.get('currency') or 'GBP'
+        quantity   = float(pos.get('quantity', 0))
+        avg_price  = float(pos.get('averagePrice') or pos.get('averagePricePaid') or 0)
+        cur_price  = float(pos.get('currentPrice', 0))
+
+        # New API provides GBP values in walletImpact; old API required manual calculation
+        wallet     = pos.get('walletImpact') or {}
+        invested   = float(wallet.get('totalCost') or round(avg_price * quantity, 2))
+        cur_value  = float(wallet.get('currentValue') or round(cur_price * quantity, 2))
+        ppl        = float(wallet.get('unrealizedProfitLoss') or pos.get('ppl') or (cur_value - invested))
+        gain_pct   = round(ppl / invested * 100, 2) if invested else 0
 
         existing = next(
             (h for h in inv[bucket] if t212_strip_ticker(h.get('ticker', '')).upper() == ticker.upper()),
@@ -3904,10 +3914,11 @@ def _t212_sync_one(conn, inv, data):
                 'shares':        quantity,
                 'avg_price':     round(avg_price, 4),
                 'current_price': round(cur_price, 4),
-                'current_value': cur_value,
-                'invested':      invested,
+                'current_value': round(cur_value, 2),
+                'invested':      round(invested, 2),
                 'gain_gbp':      round(ppl, 2),
                 'gain_pct':      gain_pct,
+                'name':          name if existing.get('name') == existing.get('ticker') else existing.get('name', name),
                 't212_ticker':   t212_ticker,
                 't212_conn_id':  conn_id,
                 't212_synced':   synced_now,
@@ -3919,15 +3930,15 @@ def _t212_sync_one(conn, inv, data):
                 'ticker':        ticker,
                 't212_ticker':   t212_ticker,
                 't212_conn_id':  conn_id,
-                'name':          ticker,
+                'name':          name,
                 'shares':        quantity,
                 'avg_price':     round(avg_price, 4),
                 'current_price': round(cur_price, 4),
-                'current_value': cur_value,
-                'invested':      invested,
+                'current_value': round(cur_value, 2),
+                'invested':      round(invested, 2),
                 'gain_gbp':      round(ppl, 2),
                 'gain_pct':      gain_pct,
-                'currency':      'GBP',
+                'currency':      currency,
                 'sector':        '',
                 'asset_class':   'equity',
                 'geography':     'US',
@@ -3975,7 +3986,7 @@ def _t212_sync_one(conn, inv, data):
 
 @app.route('/api/t212/sync', methods=['POST'])
 def t212_sync():
-    body    = request.get_json(force=True) or {}
+    body    = request.get_json(force=True, silent=True) or {}
     conn_id = body.get('id')   # optional: sync a specific connection only
     data    = load_data()
     conns   = data.get('t212_connections', [])
@@ -4070,7 +4081,7 @@ def t212_sync():
 
 @app.route('/api/t212/connections', methods=['POST'])
 def t212_add_connection():
-    body       = request.get_json(force=True) or {}
+    body       = request.get_json(force=True, silent=True) or {}
     api_key    = body.get('api_key', '').strip()
     api_secret = body.get('api_secret', '').strip()
     name       = (body.get('name') or 'Account').strip()
@@ -4098,7 +4109,7 @@ def t212_add_connection():
 
 @app.route('/api/t212/connections/<conn_id>', methods=['PATCH'])
 def t212_update_connection(conn_id):
-    body = request.get_json(force=True) or {}
+    body = request.get_json(force=True, silent=True) or {}
     data = load_data()
     conn = next((c for c in data.get('t212_connections', []) if c['id'] == conn_id), None)
     if not conn:
@@ -6199,7 +6210,7 @@ def upsert_research(ticker):
     data = load_data()
     rd = data.setdefault('research_data', {})
     ticker = ticker.upper()
-    body = request.get_json(force=True) or {}
+    body = request.get_json(force=True, silent=True) or {}
     existing = rd.get(ticker, {})
     existing.update(body)
     existing['ticker'] = ticker
@@ -6227,7 +6238,7 @@ def add_news_event(ticker):
     data = load_data()
     rd = data.setdefault('research_data', {})
     ticker = ticker.upper()
-    body = request.get_json(force=True) or {}
+    body = request.get_json(force=True, silent=True) or {}
     entry = rd.setdefault(ticker, {'ticker': ticker})
     news = entry.setdefault('news', [])
     news.insert(0, {
