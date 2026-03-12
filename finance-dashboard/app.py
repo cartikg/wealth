@@ -5503,8 +5503,20 @@ def fetch_and_cache_ticker(ticker, force=False):
     if not force and existing.get('updated') == today_str and existing.get('current_price'):
         return existing
 
-    t = yf.Ticker(ticker)
-    info = t.info or {}
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+        # Detect rate-limit: Yahoo returns a minimal dict with just 'trailingPegRatio' or empty
+        if not info or (len(info) <= 3 and 'currentPrice' not in info and 'regularMarketPrice' not in info):
+            raise RuntimeError('Rate limited or no data returned by Yahoo Finance')
+    except Exception as yf_err:
+        err_str = str(yf_err).lower()
+        if any(kw in err_str for kw in ('rate limit', 'too many', '429', 'no data', 'blocked')):
+            # Return cached data silently so the UI shows stale data rather than an error
+            if existing:
+                print(f'[yfinance] {ticker}: rate limited, returning cached data')
+                return existing
+        raise
 
     # --- Price & valuation ---
     price = _yf_safe(info, 'currentPrice', 'regularMarketPrice', 'previousClose', default=0)
@@ -5781,14 +5793,17 @@ def fetch_and_cache_ticker(ticker, force=False):
 
 def batch_refresh_all_tickers(data):
     """Background batch refresh — fetch yfinance data for all tickers in research_data."""
+    import time as _time
     rd = data.get('research_data', {})
     today_str = date.today().isoformat()
     for ticker, rec in list(rd.items()):
         if rec.get('updated') != today_str:
             try:
                 fetch_and_cache_ticker(ticker, force=False)
+                _time.sleep(1.5)  # throttle to avoid Yahoo Finance rate limits
             except Exception as e:
                 print(f'[batch_refresh] {ticker}: {e}')
+                _time.sleep(3)    # back off longer on error
 
 
 def compute_holding_cagr(holding):

@@ -3717,7 +3717,11 @@ function renderInvestments() {
   const empty = (msg) => `<div style="color:var(--text3);font-size:12px;padding:8px 0;text-align:center">${msg}</div>`;
 
   document.getElementById('isa-list').innerHTML = isa.length
-    ? isa.map(s => holdingRow(s,'isa')).join('') : empty('No ISA holdings yet');
+    ? isa.map(s => holdingRow(s,'isa')).join('')
+    : `<div style="color:var(--text3);font-size:12px;padding:12px 0;text-align:center;line-height:1.6">
+        No ISA holdings yet.<br>
+        <span style="font-size:11px">Go to <a href="#" onclick="showSection('settings');return false" style="color:var(--gold)">Settings → Trading 212</a> to connect your account &amp; sync.</span>
+       </div>`;
   document.getElementById('crypto-list').innerHTML = crypto.length
     ? crypto.map(s => holdingRow(s,'crypto')).join('') : empty('No crypto added yet');
   document.getElementById('rsu-list').innerHTML = rsu.length
