@@ -19,6 +19,7 @@ def _load_config():
 
 
 def _save_config(cfg):
+    os.makedirs(os.path.dirname(os.path.abspath(AUTH_FILE)), exist_ok=True)
     with open(AUTH_FILE, 'w') as f:
         json.dump(cfg, f, indent=2)
 

@@ -341,6 +341,7 @@ def default_data():
     }
 
 def save_data(data):
+    os.makedirs(os.path.dirname(os.path.abspath(DATA_FILE)), exist_ok=True)
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
