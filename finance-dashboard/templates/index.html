@@ -9934,13 +9934,16 @@ async function _sigsPollUntilDone() {
       const st = d.scan || {};
       _sigsShowProgress(st);
       if (!st.running) {
-        // Scan finished — grab fresh signals
+        // Scan finished — grab fresh signals and re-render
         if (d.signals) SIGNALS.signals = d.signals;
         if (d.regime)  SIGNALS.regime  = d.regime;
         if (st.last_ran) {
           const el = document.getElementById('sigs-scan-time');
           if (el) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
         }
+        sigsRenderSignalsList();
+        sigsRenderStatusCards();
+        _sigsShowProgress({done: 0, total: 0, running: false});
         break;
       }
     } catch(e) { break; }

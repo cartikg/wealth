@@ -6743,13 +6743,32 @@ def _fetch_batch_universe(tickers):
             progress=False,
             threads=True,
         )
-        # Multi-ticker result has a 2-level column index: (field, ticker)
+        # Multi-ticker result has a 2-level column index.
+        # yfinance group_by='ticker' puts TICKER at level-0 and FIELD at level-1.
+        # Use raw[t] (standard pandas access) which works across all yfinance versions.
         if isinstance(raw.columns, pd.MultiIndex):
+            # Determine which level contains ticker symbols (level 0 in yfinance ≥0.2)
+            lvl0 = list(raw.columns.get_level_values(0))
+            lvl1 = list(raw.columns.get_level_values(1))
+            ticker_level = 0  # default: ticker is level 0
+            # Heuristic: if level-1 contains any of our tickers, use level 1
+            sample = [t.upper() for t in tickers[:5]]
+            if any(s in [str(x).upper() for x in lvl1] for s in sample):
+                ticker_level = 1
+            elif any(s in [str(x).upper() for x in lvl0] for s in sample):
+                ticker_level = 0
             for t in tickers:
                 t_up = t.upper()
                 try:
-                    df = raw.xs(t, level=1, axis=1).copy() if t in raw.columns.get_level_values(1) else None
-                    if df is not None and len(df) >= 55 and 'Close' in df.columns:
+                    # Try direct dict-style access first (most reliable)
+                    try:
+                        df = raw[t].copy()
+                    except KeyError:
+                        df = raw.xs(t, level=ticker_level, axis=1).copy()
+                    # Flatten any residual MultiIndex on columns
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(-1)
+                    if len(df) >= 55 and 'Close' in df.columns:
                         result[t_up] = df
                 except Exception:
                     pass
@@ -6882,8 +6901,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
     sigs = []
 
     # ── 1. trend_pullback_long ────────────────────────────────────────────────
-    near_ema21 = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
-    if uptrend and near_ema21 and 42 <= r <= 62 and vr > 0.9 and weekly_bullish:
+    near_ema21 = abs(c - e21) / e21 < 0.025 if e21 > 0 else False  # within 2.5% of EMA21
+    if uptrend and near_ema21 and 38 <= r <= 65 and vr > 0.7 and weekly_bullish:
         stop = c - 1.8 * atr; target = c + 3.5 * (c - stop); dist = c - stop
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
         strength = 0.60 + 0.25 * (sum([near_ema21, 42 <= r <= 62, vr > 0.9, weekly_bullish, uptrend]) / 5)
@@ -6891,8 +6910,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','trend_pullback_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 2. momentum_breakout_long ─────────────────────────────────────────────
-    breaks_high = c > recent_high20 and prev_low < recent_high20
-    if breaks_high and vr > 1.3 and 55 <= r <= 78 and adx > 20:
+    breaks_high = c > recent_high20 * 0.998  # within 0.2% of 20-day high counts as breakout
+    if breaks_high and vr > 1.2 and 50 <= r <= 80 and adx > 18:
         stop = float(np.min(lows[-3:])) if len(lows) >= 3 else c - 1.5 * atr
         target = c + 4.0 * (c - stop); dist = c - stop
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
@@ -6921,8 +6940,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','mean_reversion_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 5. trend_continuation_short ──────────────────────────────────────────
-    near_ema21_s = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
-    if downtrend and near_ema21_s and 38 <= r <= 58 and weekly_bearish:
+    near_ema21_s = abs(c - e21) / e21 < 0.025 if e21 > 0 else False  # within 2.5% of EMA21
+    if downtrend and near_ema21_s and 35 <= r <= 62 and weekly_bearish:
         stop = c + 1.8 * atr; target = c - 3.5 * (stop - c); dist = stop - c
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
         strength = 0.60 + 0.25 * (sum([near_ema21_s, downtrend, 38 <= r <= 58, weekly_bearish]) / 4)
@@ -6940,8 +6959,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'short','liquidity_sweep_short',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 7. momentum_breakdown_short ──────────────────────────────────────────
-    breaks_low = c < recent_low20 and prev_high > recent_low20
-    if breaks_low and vr > 1.3 and adx > 25 and 22 <= r <= 45:
+    breaks_low = c < recent_low20 * 1.002  # within 0.2% of 20-day low counts as breakdown
+    if breaks_low and vr > 1.2 and adx > 20 and 20 <= r <= 48:
         stop = float(np.max(highs[-3:])) if len(highs) >= 3 else c + 1.5 * atr
         target = c - 4.0 * (stop - c); dist = stop - c
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
