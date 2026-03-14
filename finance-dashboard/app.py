@@ -6713,75 +6713,73 @@ _batch_hist_cache     = {}   # ticker → DataFrame
 _batch_hist_cache_ts  = 0.0  # last full-batch fetch timestamp
 
 
+def _fetch_one_ticker(sym):
+    """Download 8 months of daily OHLCV for a single ticker.
+    Returns a clean flat DataFrame or None on failure.
+    Crypto symbols (BTC, ETH, …) are mapped to their -USD yfinance form.
+    """
+    import yfinance as yf
+    CRYPTO_BASES = {'BTC','ETH','SOL','XRP','ADA','DOGE','MATIC','AVAX',
+                    'LINK','DOT','LTC','BNB','UNI','ATOM','NEAR'}
+    yf_sym = (sym.upper() + '-USD') if sym.upper() in CRYPTO_BASES else sym
+    try:
+        df = yf.download(yf_sym, period='8mo', interval='1d',
+                         auto_adjust=True, progress=False)
+        if df is None or len(df) < 55:
+            return sym.upper(), None
+        # Flatten any MultiIndex columns (single-ticker download is usually flat)
+        import pandas as pd
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if 'Close' not in df.columns:
+            return sym.upper(), None
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
+        return sym.upper(), df if len(df) >= 55 else None
+    except Exception as e:
+        print(f'[signals] download error {sym}: {e}')
+        return sym.upper(), None
+
+
 def _fetch_batch_universe(tickers):
-    """Batch-download 8 months of daily OHLCV for all tickers using yfinance threads.
-    Returns dict: ticker (upper) → DataFrame (Close/High/Low/Volume columns).
+    """Download 8 months of daily OHLCV for all tickers in parallel.
+    Uses ThreadPoolExecutor with individual single-ticker downloads to avoid
+    the fragile MultiIndex column-extraction logic of yfinance batch downloads.
+    Returns dict: ticker (upper) → DataFrame.
     """
     import time
-    import yfinance as yf
-    import pandas as pd
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     global _batch_hist_cache, _batch_hist_cache_ts
 
     now = time.time()
-    # Use cache if less than 30 minutes old
+    # Use cache only if less than 30 minutes old AND non-empty
     if _batch_hist_cache and now - _batch_hist_cache_ts < 1800:
-        print(f'[signals] using cached batch data ({len(_batch_hist_cache)} tickers)')
+        print(f'[signals] using cached data ({len(_batch_hist_cache)}/{len(tickers)} tickers)')
         return _batch_hist_cache
 
-    print(f'[signals] batch downloading {len(tickers)} tickers…')
+    print(f'[signals] downloading {len(tickers)} tickers (10 parallel workers)…')
     result = {}
 
-    # yfinance batch download (much faster than individual calls)
-    try:
-        raw = yf.download(
-            tickers=' '.join(tickers),
-            period='8mo',
-            interval='1d',
-            group_by='ticker',
-            auto_adjust=True,
-            progress=False,
-            threads=True,
-        )
-        # Multi-ticker result has a 2-level column index.
-        # yfinance group_by='ticker' puts TICKER at level-0 and FIELD at level-1.
-        # Use raw[t] (standard pandas access) which works across all yfinance versions.
-        if isinstance(raw.columns, pd.MultiIndex):
-            # Determine which level contains ticker symbols (level 0 in yfinance ≥0.2)
-            lvl0 = list(raw.columns.get_level_values(0))
-            lvl1 = list(raw.columns.get_level_values(1))
-            ticker_level = 0  # default: ticker is level 0
-            # Heuristic: if level-1 contains any of our tickers, use level 1
-            sample = [t.upper() for t in tickers[:5]]
-            if any(s in [str(x).upper() for x in lvl1] for s in sample):
-                ticker_level = 1
-            elif any(s in [str(x).upper() for x in lvl0] for s in sample):
-                ticker_level = 0
-            for t in tickers:
-                t_up = t.upper()
-                try:
-                    # Try direct dict-style access first (most reliable)
-                    try:
-                        df = raw[t].copy()
-                    except KeyError:
-                        df = raw.xs(t, level=ticker_level, axis=1).copy()
-                    # Flatten any residual MultiIndex on columns
-                    if isinstance(df.columns, pd.MultiIndex):
-                        df.columns = df.columns.get_level_values(-1)
-                    if len(df) >= 55 and 'Close' in df.columns:
-                        result[t_up] = df
-                except Exception:
-                    pass
-        else:
-            # Single ticker returned flat
-            if len(raw) >= 55 and 'Close' in raw.columns:
-                result[tickers[0].upper()] = raw
-    except Exception as e:
-        print(f'[signals] batch download error: {e}')
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_one_ticker, t): t for t in tickers}
+        for fut in as_completed(futures):
+            try:
+                sym, df = fut.result()
+                if df is not None:
+                    result[sym] = df
+            except Exception as e:
+                print(f'[signals] future error: {e}')
 
-    _batch_hist_cache    = result
-    _batch_hist_cache_ts = now
-    print(f'[signals] batch download complete: {len(result)} tickers with data')
+    print(f'[signals] download complete: {len(result)}/{len(tickers)} tickers with data')
+
+    # Only cache if we actually got data — don't cache a failed download
+    if result:
+        _batch_hist_cache    = result
+        _batch_hist_cache_ts = now
+    else:
+        print('[signals] WARNING: 0 tickers returned data — cache NOT stored, will retry next scan')
+
     return result
 
 
@@ -6995,6 +6993,10 @@ _scan_state = {
     'total':      0,
     'last_ran':   None,
     'error':      None,
+    'universe':   '',
+    'batch_ok':   False,   # did the batch download return any data?
+    'batch_got':  0,       # how many tickers had price data
+    'log':        [],      # per-ticker scan results (populated live)
 }
 
 
@@ -7037,38 +7039,68 @@ def generate_trading_signals(data):
     # Deduplicate, strip blanks
     all_tickers = sorted({t for t in (personal | set(market_universe)) if t and len(t) >= 1})
 
-    _scan_state['total']   = len(all_tickers)
-    _scan_state['done']    = 0
-    _scan_state['running'] = True
+    _scan_state['total']      = len(all_tickers)
+    _scan_state['done']       = 0
+    _scan_state['running']    = True
     _scan_state['started_at'] = datetime.utcnow().isoformat() + 'Z'
-    _scan_state['error']   = None
+    _scan_state['error']      = None
+    _scan_state['universe']   = universe_key
+    _scan_state['batch_ok']   = False
+    _scan_state['batch_got']  = 0
+    _scan_state['log']        = []   # reset log for fresh scan
 
     print(f'[signals] scanning {len(all_tickers)} tickers (universe={universe_key})')
 
-    # 3. Batch-fetch price data for the full universe
+    # 3. Fetch price data for the full universe (parallel individual downloads)
     batch = _fetch_batch_universe(all_tickers)
 
-    # 4. Per-ticker signal generation
+    _scan_state['batch_ok']  = len(batch) > 0
+    _scan_state['batch_got'] = len(batch)
+    print(f'[signals] data: {len(batch)}/{len(all_tickers)} tickers downloaded')
+
+    # 4. Per-ticker signal generation with live logging
     signals = []
     for ticker in all_tickers:
+        entry = {'ticker': ticker, 'status': 'pending', 'msg': ''}
+        _scan_state['log'].append(entry)
         try:
-            hist = batch.get(ticker.upper())  # may be None if not in batch
-            sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=hist)
-            signals.extend(sigs)
+            hist = batch.get(ticker.upper())
+            if hist is None:
+                entry['status'] = 'no_data'
+                entry['msg']    = 'Download failed'
+            elif len(hist) < 55:
+                entry['status'] = 'no_data'
+                entry['msg']    = f'Only {len(hist)} bars (need 55+)'
+            else:
+                sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=hist)
+                strong = [s for s in sigs if s.get('strength', 0) >= 0.60]
+                signals.extend(strong)
+                if strong:
+                    entry['status'] = 'signal'
+                    entry['msg']    = ' | '.join(
+                        f"{s['signal_type']} {s['direction'].upper()} {int(s['strength']*100)}%"
+                        for s in strong
+                    )
+                else:
+                    entry['status'] = 'no_signal'
+                    entry['msg']    = f'{len(hist)} bars — conditions not met'
         except Exception as e:
+            entry['status'] = 'error'
+            entry['msg']    = str(e)
             print(f'[signals] {ticker}: {e}')
         _scan_state['done'] += 1
 
     _scan_state['running']  = False
     _scan_state['last_ran'] = datetime.utcnow().isoformat() + 'Z'
 
-    # Filter ≥60% strength
-    signals = [s for s in signals if s.get('strength', 0) >= 0.60]
+    # Sort: best signals first; cap at 5 long + 5 short
     signals.sort(key=lambda x: x.get('strength', 0), reverse=True)
-
-    # Top 10: best 5 longs + best 5 shorts
     top_longs  = [s for s in signals if s['direction'] == 'long'][:5]
     top_shorts = [s for s in signals if s['direction'] == 'short'][:5]
+
+    found = len(top_longs) + len(top_shorts)
+    no_data = sum(1 for e in _scan_state['log'] if e['status'] == 'no_data')
+    print(f'[signals] scan done — {found} signals, {no_data} tickers with no data')
     return top_longs + top_shorts
 
 
@@ -7522,8 +7554,10 @@ def get_scan_status():
     """
     data = load_data()
     sd   = data.get('signals_data', {})
+    # Include the live per-ticker log so the frontend can show real-time scan feedback
     return jsonify({
         'scan':    _scan_state,
+        'log':     _scan_state.get('log', []),
         'signals': sd.get('active_signals', []),
         'regime':  sd.get('regime', {'label': 'unknown'}),
     })
