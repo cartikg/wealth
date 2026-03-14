@@ -257,6 +257,7 @@ def migrate_data(data):
                 'scan_universe': 'global',
                 'min_price': 0.5,
                 'min_volume': 500000,
+                'trading_mode': 'live',
                 'engines': {
                     'crypto_spot':  {'capital': 7500,  'leverage': 1},
                     'crypto_perps': {'capital': 3750,  'leverage': 3},
@@ -266,10 +267,11 @@ def migrate_data(data):
                 },
                 'mode': 'B',
             },
-            'active_signals': [],
-            'open_positions': [],
-            'closed_trades':  [],
-            'regime': {'label': 'unknown', 'adx': None, 'trend': None},
+            'active_signals':   [],
+            'open_positions':   [],
+            'closed_trades':    [],
+            'regime':           {'label': 'unknown', 'adx': None, 'trend': None},
+            'backtest_results': {},
         }
     else:
         sd = data['signals_data']
@@ -284,7 +286,9 @@ def migrate_data(data):
         cfg.setdefault('scan_universe', 'global')
         cfg.setdefault('min_price', 0.5)
         cfg.setdefault('min_volume', 500000)
+        cfg.setdefault('trading_mode', 'live')
         cfg.setdefault('mode', 'B')
+        sd.setdefault('backtest_results', {})
         eng = cfg.setdefault('engines', {})
         for ename, defaults in [
             ('crypto_spot',  {'capital': 7500,  'leverage': 1}),
@@ -7054,6 +7058,388 @@ def _run_background_scan():
         _scan_state['error']   = str(e)
 
 
+# ── Backtesting Engine ────────────────────────────────────────────────────────
+
+def _backtest_ticker(ticker, hist, risk_pct=0.015):
+    """Walk-forward backtest for a single ticker.
+    Replicates the live 7-signal conditions on historical OHLCV data.
+    Returns (trades_list, equity_points_list).
+    """
+    import numpy as np
+
+    # Flatten MultiIndex columns (yfinance 0.2+)
+    if hasattr(hist.columns, 'get_level_values'):
+        hist = hist.copy()
+        hist.columns = hist.columns.get_level_values(0)
+
+    closes  = hist['Close'].values.astype(float).flatten()
+    highs   = hist['High'].values.astype(float).flatten()
+    lows    = hist['Low'].values.astype(float).flatten()
+    volumes = hist['Volume'].values.astype(float).flatten()
+    dates   = hist.index
+    n       = len(closes)
+
+    if n < 210:
+        return [], []
+
+    # Pre-compute all indicators over full history (mirrors live signal engine)
+    ema8   = _ema(closes, 8)
+    ema21  = _ema(closes, 21)
+    ema50  = _ema(closes, 50)
+    ema200 = _ema(closes, 200)
+    rsi14  = _rsi(closes, 14)
+    atr14  = _atr(highs, lows, closes, 14)
+    adx14, _, _ = _adx(highs, lows, closes, 14)
+    bbu, bbl    = _bollinger(closes, 20)
+    stoch_k     = _stoch(closes, highs, lows, 14)
+
+    vol_ratio = np.ones(n)
+    for i in range(20, n):
+        avg = np.mean(volumes[i - 20:i])
+        vol_ratio[i] = volumes[i] / avg if avg > 0 else 1.0
+
+    trades     = []
+    open_trade = None
+    equity     = 1.0
+    equity_pts = []          # list of (date_str, equity_float)
+    MAX_HOLD   = 20
+    START_BAR  = 205         # enough for EMA200 to warm up
+
+    for i in range(n):
+        equity_pts.append((str(dates[i].date()), round(equity, 6)))
+
+        # ── Exit check ───────────────────────────────────────────────────────
+        if open_trade and i > open_trade['entry_bar']:
+            hi = float(highs[i]); lo = float(lows[i]); cl = float(closes[i])
+            bars_held = i - open_trade['entry_bar']
+            exit_p = None; result = None
+
+            if open_trade['direction'] == 'long':
+                if lo <= open_trade['stop']:
+                    exit_p = open_trade['stop']; result = 'loss'
+                elif hi >= open_trade['target']:
+                    exit_p = open_trade['target']; result = 'win'
+                elif bars_held >= MAX_HOLD:
+                    exit_p = cl; result = 'win' if cl > open_trade['entry'] else 'loss'
+            else:
+                if hi >= open_trade['stop']:
+                    exit_p = open_trade['stop']; result = 'loss'
+                elif lo <= open_trade['target']:
+                    exit_p = open_trade['target']; result = 'win'
+                elif bars_held >= MAX_HOLD:
+                    exit_p = cl; result = 'win' if cl < open_trade['entry'] else 'loss'
+
+            if exit_p is not None:
+                ent  = open_trade['entry']
+                stop = open_trade['stop']
+                stop_dist = abs(ent - stop) / ent if ent > 0 else 0.02
+                pos_sz    = min(risk_pct / max(stop_dist, 0.001), 3.0)
+                pnl_price = ((exit_p - ent) / ent if open_trade['direction'] == 'long'
+                             else (ent - exit_p) / ent)
+                pnl_port  = pnl_price * pos_sz
+                equity    = max(0.01, equity * (1 + pnl_port))
+                open_trade.update({
+                    'exit_price': round(float(exit_p), 6),
+                    'exit_date':  str(dates[i].date()),
+                    'result':     result,
+                    'pnl_pct':    round(pnl_port * 100, 3),
+                    'r_multiple': round(pnl_price / stop_dist, 2) if stop_dist > 0 else 0,
+                })
+                trades.append(open_trade)
+                open_trade = None
+
+        # ── Entry check ──────────────────────────────────────────────────────
+        if open_trade is None and i >= START_BAR:
+            c   = float(closes[i]); h = float(highs[i]); l = float(lows[i])
+            e8  = float(ema8[i]);   e21 = float(ema21[i])
+            e50 = float(ema50[i]);  e200 = float(ema200[i])
+            r   = float(rsi14[i]);  atr  = float(atr14[i])
+            adx = float(adx14[i]);  stk  = float(stoch_k[i])
+            bbu_v = float(bbu[i]);  bbl_v = float(bbl[i])
+            vr    = float(vol_ratio[i])
+
+            if atr <= 0 or e21 <= 0 or c <= 0:
+                continue
+
+            rh20 = float(np.max(highs[i - 22:i - 1])) if i >= 23 else float(highs[i])
+            rl20 = float(np.min(lows[i - 22:i - 1]))  if i >= 23 else float(lows[i])
+            ph   = float(highs[i - 1]) if i >= 1 else h
+            pl   = float(lows[i - 1])  if i >= 1 else l
+
+            uptrend   = e50 > e200 and e8 > e21
+            downtrend = e50 < e200 and e8 < e21
+            wb  = (c > float(closes[i - 5]) and e50 > e200) if i >= 5 else False
+            wbe = (c < float(closes[i - 5]) and e50 < e200) if i >= 5 else False
+
+            sig_fired = None
+
+            # 1. trend_pullback_long
+            near21 = abs(c - e21) / e21 < 0.012
+            if uptrend and near21 and 42 <= r <= 62 and vr > 0.9 and wb:
+                stop = c - 1.8 * atr; target = c + 3.5 * (c - stop)
+                sig_fired = ('long', 'trend_pullback_long', c, stop, target)
+
+            # 2. momentum_breakout_long
+            if sig_fired is None:
+                if c > rh20 and pl < rh20 and vr > 1.3 and 55 <= r <= 78 and adx > 20:
+                    stop = float(np.min(lows[i - 3:i])) if i >= 3 else c - 1.5 * atr
+                    target = c + 4.0 * (c - stop)
+                    sig_fired = ('long', 'momentum_breakout_long', c, stop, target)
+
+            # 3. liquidity_sweep_long
+            if sig_fired is None:
+                if pl < rl20 and c > rl20 and (c - l) > 1.5 * atr:
+                    stop = pl - 0.2 * atr; target = c + 4.0 * (c - stop)
+                    sig_fired = ('long', 'liquidity_sweep_long', c, stop, target)
+
+            # 4. mean_reversion_long
+            if sig_fired is None:
+                if (not uptrend and not downtrend and adx < 25
+                        and bbl_v > 0 and c <= bbl_v * 1.005 and stk < 15 and r < 32):
+                    stop = c - 1.5 * atr; target = c + 3.0 * (c - stop)
+                    sig_fired = ('long', 'mean_reversion_long', c, stop, target)
+
+            # 5. trend_continuation_short
+            if sig_fired is None:
+                if downtrend and abs(c - e21) / e21 < 0.012 and 38 <= r <= 58 and wbe:
+                    stop = c + 1.8 * atr; target = c - 3.5 * (stop - c)
+                    sig_fired = ('short', 'trend_continuation_short', c, stop, target)
+
+            # 6. liquidity_sweep_short
+            if sig_fired is None:
+                if ph > rh20 and c < rh20 and (h - c) > 1.5 * atr:
+                    stop = ph + 0.2 * atr; target = c - 4.0 * (stop - c)
+                    sig_fired = ('short', 'liquidity_sweep_short', c, stop, target)
+
+            # 7. momentum_breakdown_short
+            if sig_fired is None:
+                if c < rl20 and ph > rl20 and vr > 1.3 and adx > 25 and 22 <= r <= 45:
+                    stop = float(np.max(highs[i - 3:i])) if i >= 3 else c + 1.5 * atr
+                    target = c - 4.0 * (stop - c)
+                    sig_fired = ('short', 'momentum_breakdown_short', c, stop, target)
+
+            if sig_fired:
+                direction, sig_type, entry, stop, target = sig_fired
+                # Sanity guards
+                if direction == 'long'  and (stop >= entry or target <= entry): continue
+                if direction == 'short' and (stop <= entry or target >= entry): continue
+                open_trade = {
+                    'ticker':      ticker,
+                    'signal_type': sig_type,
+                    'direction':   direction,
+                    'entry':       round(float(entry), 6),
+                    'entry_bar':   i,
+                    'entry_date':  str(dates[i].date()),
+                    'stop':        round(float(stop), 6),
+                    'target':      round(float(target), 6),
+                }
+
+    # Close any trade still open at end of history
+    if open_trade and n > open_trade['entry_bar']:
+        ent  = open_trade['entry']
+        stop = open_trade['stop']
+        exit_p    = float(closes[-1])
+        stop_dist = abs(ent - stop) / ent if ent > 0 else 0.02
+        pos_sz    = min(risk_pct / max(stop_dist, 0.001), 3.0)
+        pnl_price = (exit_p - ent) / ent if open_trade['direction'] == 'long' else (ent - exit_p) / ent
+        pnl_port  = pnl_price * pos_sz
+        equity    = max(0.01, equity * (1 + pnl_port))
+        open_trade.update({
+            'exit_price': round(exit_p, 6),
+            'exit_date':  str(dates[-1].date()),
+            'result':     'win' if pnl_price > 0 else 'loss',
+            'pnl_pct':    round(pnl_port * 100, 3),
+            'r_multiple': round(pnl_price / stop_dist, 2) if stop_dist > 0 else 0,
+        })
+        trades.append(open_trade)
+
+    return trades, equity_pts
+
+
+def _compute_backtest_stats(all_trades):
+    """Aggregate stats from all trades across all tickers."""
+    import numpy as np
+
+    if not all_trades:
+        return None
+
+    wins   = [t for t in all_trades if t.get('result') == 'win']
+    losses = [t for t in all_trades if t.get('result') == 'loss']
+
+    # Build chronological portfolio equity curve (trade-by-trade)
+    sorted_trades = sorted(all_trades, key=lambda t: t.get('exit_date', ''))
+    port_dates  = ['Start']
+    port_equity = [1.0]
+    eq = 1.0
+    for t in sorted_trades:
+        pnl = t.get('pnl_pct', 0) / 100.0
+        eq  = max(0.01, eq * (1 + pnl))
+        port_equity.append(round(eq, 6))
+        port_dates.append(t.get('exit_date', ''))
+
+    total_return = (port_equity[-1] - 1.0) * 100
+
+    # Max drawdown
+    peak = 1.0; max_dd = 0.0
+    for e in port_equity:
+        peak = max(peak, e)
+        max_dd = max(max_dd, (peak - e) / peak)
+
+    # Sharpe (per-trade approximation)
+    pnls = [t.get('pnl_pct', 0) / 100.0 for t in sorted_trades]
+    if len(pnls) > 2:
+        mu  = float(np.mean(pnls))
+        std = float(np.std(pnls))
+        # Trades per year ≈ total_trades / 10 years
+        n_per_yr = max(len(pnls) / 10.0, 1.0)
+        sharpe   = (mu / std * (n_per_yr ** 0.5)) if std > 0 else 0.0
+    else:
+        sharpe = 0.0
+
+    avg_win  = float(np.mean([t['pnl_pct'] for t in wins]))   if wins   else 0.0
+    avg_loss = float(np.mean([t['pnl_pct'] for t in losses])) if losses else 0.0
+    pf_num   = sum(t['pnl_pct'] for t in wins)
+    pf_den   = abs(sum(t['pnl_pct'] for t in losses)) if losses else 1.0
+
+    # Per-signal-type breakdown
+    sig_map = {}
+    for t in all_trades:
+        st = t.get('signal_type', 'unknown')
+        sig_map.setdefault(st, {'total': 0, 'wins': 0, 'pnls': []})
+        sig_map[st]['total'] += 1
+        if t.get('result') == 'win':
+            sig_map[st]['wins'] += 1
+        sig_map[st]['pnls'].append(t.get('pnl_pct', 0))
+
+    sig_breakdown = sorted([
+        {
+            'signal_type': st,
+            'total':    d['total'],
+            'win_rate': round(d['wins'] / d['total'] * 100, 1) if d['total'] else 0,
+            'avg_pnl':  round(float(np.mean(d['pnls'])), 3) if d['pnls'] else 0,
+        }
+        for st, d in sig_map.items()
+    ], key=lambda x: -x['win_rate'])
+
+    return {
+        'total_trades':     len(all_trades),
+        'win_rate':         round(len(wins) / len(all_trades) * 100, 1),
+        'total_return_pct': round(total_return, 2),
+        'max_drawdown_pct': round(max_dd * 100, 2),
+        'sharpe':           round(max(min(sharpe, 99.0), -99.0), 2),
+        'avg_win_pct':      round(avg_win, 3),
+        'avg_loss_pct':     round(avg_loss, 3),
+        'profit_factor':    round(pf_num / pf_den, 2) if pf_den > 0 else 0.0,
+        'equity_curve':     list(zip(port_dates, port_equity)),
+        'signal_breakdown': sig_breakdown,
+    }
+
+
+_backtest_state = {
+    'running':  False,
+    'done':     0,
+    'total':    0,
+    'last_ran': None,
+    'error':    None,
+    'tickers':  [],
+}
+
+
+def _run_backtest_thread(tickers):
+    """Background thread: download 10y data, run walk-forward backtest, persist results."""
+    import yfinance as yf
+    import pandas as pd
+
+    _backtest_state.update({'running': True, 'done': 0, 'total': len(tickers),
+                            'error': None, 'tickers': list(tickers)})
+    print(f'[backtest] starting 10-year backtest for {tickers}')
+
+    try:
+        data     = load_data()
+        cfg      = data.get('signals_data', {}).get('config', {})
+        risk_pct = float(cfg.get('risk_per_trade', 0.015))
+
+        # Batch-download 10 years of daily OHLCV
+        print('[backtest] downloading 10y price data…')
+        raw = yf.download(
+            tickers=' '.join(tickers),
+            period='10y',
+            interval='1d',
+            group_by='ticker',
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+
+        hist_map = {}
+        if len(tickers) == 1:
+            if len(raw) >= 210 and 'Close' in raw.columns:
+                hist_map[tickers[0].upper()] = raw
+        elif isinstance(raw.columns, pd.MultiIndex):
+            lvl1 = raw.columns.get_level_values(1)
+            for t in tickers:
+                for key in (t, t.upper(), t.lower()):
+                    if key in lvl1:
+                        try:
+                            df = raw.xs(key, level=1, axis=1).copy()
+                            if len(df) >= 210 and 'Close' in df.columns:
+                                hist_map[t.upper()] = df
+                            break
+                        except Exception:
+                            pass
+
+        print(f'[backtest] got data for {len(hist_map)}/{len(tickers)} tickers')
+
+        all_trades  = []
+        per_ticker  = {}
+
+        for t in tickers:
+            t_up = t.upper()
+            hist = hist_map.get(t_up)
+            if hist is None:
+                print(f'[backtest] no data for {t_up} — skip')
+                _backtest_state['done'] += 1
+                continue
+
+            print(f'[backtest] {t_up} ({len(hist)} bars)…')
+            try:
+                trades, eq_pts = _backtest_ticker(t_up, hist, risk_pct)
+                all_trades.extend(trades)
+                t_wins = [tr for tr in trades if tr.get('result') == 'win']
+                final_eq = eq_pts[-1][1] if eq_pts else 1.0
+                per_ticker[t_up] = {
+                    'total_trades':     len(trades),
+                    'win_rate':         round(len(t_wins) / len(trades) * 100, 1) if trades else 0,
+                    'total_return_pct': round((final_eq - 1.0) * 100, 2),
+                    'equity_curve':     [(d, v) for d, v in eq_pts[::5]],   # thin to ~500 pts
+                }
+                print(f'[backtest] {t_up}: {len(trades)} trades, equity={final_eq:.3f}')
+            except Exception as e:
+                print(f'[backtest] {t_up} error: {e}')
+            _backtest_state['done'] += 1
+
+        stats = _compute_backtest_stats(all_trades)
+        data  = load_data()   # reload after potentially long run
+        sd    = data.setdefault('signals_data', {})
+        sd['backtest_results'] = {
+            'stats':        stats,
+            'per_ticker':   per_ticker,
+            'tickers':      tickers,
+            'ran_at':       datetime.utcnow().isoformat() + 'Z',
+            'period':       '10y',
+            'total_trades': len(all_trades),
+        }
+        save_data(data)
+        _backtest_state['last_ran'] = datetime.utcnow().isoformat() + 'Z'
+        print(f'[backtest] done. {len(all_trades)} total trades across {len(tickers)} tickers.')
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        _backtest_state['error'] = str(e)
+    finally:
+        _backtest_state['running'] = False
+
+
 # ── Trading Signals: API Endpoints ────────────────────────────────────────────
 
 @app.route('/api/signals', methods=['GET'])
@@ -7092,6 +7478,55 @@ def get_scan_status():
     return jsonify({'scan': _scan_state})
 
 
+@app.route('/api/signals/backtest', methods=['GET', 'POST'])
+def signals_backtest():
+    """GET: return cached backtest results. POST: kick off 10-year walk-forward backtest."""
+    data = load_data()
+    sd   = data.get('signals_data', {})
+
+    if request.method == 'GET':
+        return jsonify({
+            'results': sd.get('backtest_results', {}),
+            'state':   _backtest_state,
+        })
+
+    # POST — start backtest
+    if _backtest_state['running']:
+        return jsonify({'error': 'Backtest already running', 'state': _backtest_state}), 409
+
+    body    = request.get_json(force=True, silent=True) or {}
+    tickers = [t.strip().upper() for t in body.get('tickers', []) if t.strip()]
+
+    if not tickers:
+        # Default: active signal tickers + portfolio holdings
+        active  = sd.get('active_signals', [])
+        tickers = list({s['ticker'] for s in active})
+        for bucket, items in data.get('investments', {}).items():
+            for h in items:
+                t = h.get('ticker') or h.get('coin_id')
+                if t:
+                    tickers.append(str(t).upper())
+        tickers = sorted(set(tickers))[:15]
+
+    if not tickers:
+        return jsonify({'error': 'No tickers to backtest — run a scan first'}), 400
+
+    import threading as _threading
+    _threading.Thread(target=_run_backtest_thread, args=(tickers,), daemon=True).start()
+    return jsonify({'started': True, 'tickers': tickers, 'state': _backtest_state})
+
+
+@app.route('/api/signals/backtest-status', methods=['GET'])
+def backtest_status():
+    """Poll backtest progress and return results once done."""
+    data = load_data()
+    sd   = data.get('signals_data', {})
+    return jsonify({
+        'state':   _backtest_state,
+        'results': sd.get('backtest_results', {}) if not _backtest_state['running'] else None,
+    })
+
+
 @app.route('/api/signals/regime', methods=['GET'])
 def get_regime():
     data = load_data()
@@ -7113,6 +7548,8 @@ def take_signal(sig_id):
     data = load_data()
     sd   = data.setdefault('signals_data', {})
     cfg  = sd.get('config', {})
+    body = request.get_json(force=True, silent=True) or {}
+    trading_mode = body.get('trading_mode', cfg.get('trading_mode', 'live'))
     max_pos = int(cfg.get('max_positions', 4))
 
     open_pos = sd.get('open_positions', [])
@@ -7155,6 +7592,7 @@ def take_signal(sig_id):
         'engine':           sig['engine'],
         'signal_type':      sig['signal_type'],
         'original_stop':    sig['stop_loss'],
+        'paper':            (trading_mode == 'practice'),
     }
     sd.setdefault('open_positions', []).append(pos)
     # Remove from active signals
@@ -7307,20 +7745,28 @@ def place_t212_order():
     data = load_data()
     body = request.get_json(force=True, silent=True) or {}
 
-    ticker      = body.get('ticker', '').upper()
-    direction   = body.get('direction', 'long')   # 'long' or 'short'
-    order_type  = body.get('order_type', 'market') # 'market' or 'limit'
-    quantity    = body.get('quantity')              # shares / units
-    limit_price = body.get('limit_price')
-    conn_id     = body.get('conn_id')               # specific T212 connection id (optional)
+    ticker       = body.get('ticker', '').upper()
+    direction    = body.get('direction', 'long')    # 'long' or 'short'
+    order_type   = body.get('order_type', 'market') # 'market' or 'limit'
+    quantity     = body.get('quantity')              # shares / units
+    limit_price  = body.get('limit_price')
+    conn_id      = body.get('conn_id')               # specific T212 connection id (optional)
+    trading_mode = body.get('trading_mode', 'live')  # 'live' or 'practice'
 
     if not ticker:
         return jsonify({'error': 'ticker required'}), 400
 
-    # Pick T212 connection
-    conns = [c for c in data.get('t212_connections', []) if c.get('enabled', True)]
-    if not conns:
+    # Pick T212 connection — filter by trading_mode
+    all_conns = [c for c in data.get('t212_connections', []) if c.get('enabled', True)]
+    if not all_conns:
         return jsonify({'error': 'No enabled Trading 212 connections configured'}), 400
+
+    if trading_mode == 'practice':
+        mode_conns = [c for c in all_conns if c.get('mode', 'live') in ('demo', 'practice')]
+        conns = mode_conns if mode_conns else all_conns  # fallback if no demo conn
+    else:
+        mode_conns = [c for c in all_conns if c.get('mode', 'live') == 'live']
+        conns = mode_conns if mode_conns else all_conns
 
     conn = next((c for c in conns if c['id'] == conn_id), None) if conn_id else conns[0]
     if not conn:

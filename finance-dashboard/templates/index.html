@@ -1840,7 +1840,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <!-- Mode toggle -->
+          <!-- Practice / Live toggle -->
+          <div style="display:flex;background:var(--surface2);border-radius:8px;padding:2px;gap:2px">
+            <button id="sig-trade-live" class="btn btn-sm" onclick="sigsSetTradingMode('live')"
+              style="border-radius:6px;padding:5px 12px;font-size:12px;background:var(--teal);color:#000;border:none">💰 Live</button>
+            <button id="sig-trade-practice" class="btn btn-sm" onclick="sigsSetTradingMode('practice')"
+              style="border-radius:6px;padding:5px 12px;font-size:12px;background:transparent;color:var(--text2);border:none">🎮 Practice</button>
+          </div>
+          <!-- B / C mode toggle -->
           <div style="display:flex;background:var(--surface2);border-radius:8px;padding:2px;gap:2px">
             <button id="sig-mode-b" class="btn btn-sm" onclick="sigsSetMode('B')"
               style="border-radius:6px;padding:5px 14px;font-size:12px;background:var(--gold);color:#000;border:none">B-Mode</button>
@@ -1852,6 +1859,15 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             Scan
           </button>
+        </div>
+      </div>
+
+      <!-- Paper trading banner (shown in practice mode) -->
+      <div id="sigs-paper-banner" style="display:none;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;align-items:center;gap:12px">
+        <span style="font-size:22px">🎮</span>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--gold)">Paper Trading Mode</div>
+          <div style="font-size:11px;color:var(--text3)">Trades execute on your T212 Practice account — no real money at risk.</div>
         </div>
       </div>
 
@@ -1908,6 +1924,56 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;text-align:center;color:var(--text3);margin-bottom:28px">
           <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom:8px;opacity:.4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           <div style="font-size:13px">Options chain integration — coming soon</div>
+        </div>
+      </div>
+
+      <!-- ── Backtest Engine ──────────────────────────────────────────────── -->
+      <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <span>📊 Backtest Engine <span style="font-size:12px;font-weight:400;color:var(--text3);font-family:var(--font-body)">(10-year walk-forward)</span></span>
+        <span id="bt-last-ran" style="font-size:11px;font-weight:400;color:var(--text3);font-family:var(--font-body)"></span>
+      </div>
+      <div class="card" style="padding:20px;margin-bottom:28px">
+        <!-- Ticker selector -->
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Select tickers to backtest:</div>
+        <div id="bt-ticker-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+          <span style="font-size:12px;color:var(--text3)">Run a signal scan first to populate tickers</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:var(--gold);color:#000;font-weight:600" onclick="sigsRunBacktest()" id="bt-run-btn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;vertical-align:middle"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Run Backtest
+          </button>
+          <!-- Progress bar (shown while running) -->
+          <div id="bt-progress-wrap" style="display:none;flex:1;min-width:180px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+              <span id="bt-progress-label" style="font-size:11px;color:var(--text3)">Starting…</span>
+              <span id="bt-progress-pct" style="font-size:11px;color:var(--text3)">0%</span>
+            </div>
+            <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden">
+              <div id="bt-progress-bar" style="height:100%;width:0%;background:var(--gold);border-radius:2px;transition:width .4s ease"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results (hidden until backtest runs) -->
+        <div id="bt-results" style="display:none">
+          <div style="border-top:1px solid var(--border);margin:18px 0 14px"></div>
+          <!-- Stats grid -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px" id="bt-stats-grid"></div>
+          <!-- Equity curve -->
+          <div style="margin-bottom:18px">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500">Portfolio equity curve (normalised, all tickers combined)</div>
+            <div style="height:190px;position:relative"><canvas id="bt-equity-chart"></canvas></div>
+          </div>
+          <!-- Per-ticker summary -->
+          <div id="bt-per-ticker" style="margin-bottom:16px"></div>
+          <!-- Per-signal-type table -->
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500">By signal type</div>
+          <div id="bt-sig-table"></div>
+        </div>
+
+        <div id="bt-empty" style="color:var(--text3);font-size:13px;text-align:center;padding:18px 0">
+          Select tickers and run a 10-year walk-forward backtest to validate strategy edge
         </div>
       </div>
 
@@ -9703,17 +9769,18 @@ async function siRefreshAll() {
 // ── Trading Signals ─────────────────────────────────────────────────────────
 
 const SIGNALS = {
-  signals:    [],
-  positions:  [],
-  regime:     {},
-  stats:      null,
-  trades:     [],
-  mode:       'B',
-  universe:   'global',
-  scanning:   false,
-  _pollTimer: null,
-  _pnlChart:  null,
-  _monthChart: null,
+  signals:      [],
+  positions:    [],
+  regime:       {},
+  stats:        null,
+  trades:       [],
+  mode:         'B',
+  universe:     'global',
+  trading_mode: 'live',
+  scanning:     false,
+  _pollTimer:   null,
+  _pnlChart:    null,
+  _monthChart:  null,
 };
 
 const SIG_TYPE_LABELS = {
@@ -9745,15 +9812,18 @@ const REGIME_META = {
 async function renderSignals() {
   const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
 
-  // Load saved universe preference from config
+  // Load saved config (universe + trading_mode)
   try {
     const rc = await fetch('/api/signals/config', {headers: hdrs});
     if (rc.ok) {
       const dc = await rc.json();
-      SIGNALS.universe = (dc.config || {}).scan_universe || 'global';
+      const cfg = dc.config || {};
+      SIGNALS.universe     = cfg.scan_universe || 'global';
+      SIGNALS.trading_mode = cfg.trading_mode  || 'live';
     }
   } catch(e) {}
   sigsHighlightUniverseChip(SIGNALS.universe);
+  sigsSetTradingMode(SIGNALS.trading_mode);
 
   await sigsLoadPositions();
   await sigsLoadHistory();
@@ -9776,6 +9846,18 @@ async function renderSignals() {
       }
     }
   } catch(e) {}
+
+  // Load cached backtest results
+  try {
+    const rb = await fetch('/api/signals/backtest', {headers: hdrs});
+    if (rb.ok) {
+      const db = await rb.json();
+      if (db.results && db.results.stats) btRenderResults(db.results);
+    }
+  } catch(e) {}
+
+  // Populate backtest ticker chips from cached signals
+  btInitTickers();
 }
 
 // ── Universe selector ────────────────────────────────────────────────────────
@@ -9893,6 +9975,8 @@ async function sigsRefresh() {
   _sigsBtnIdle();
   _sigsHideProgress();
   sigsRenderAll();
+  // Populate backtest ticker chips from fresh signals
+  btInitTickers();
 }
 
 async function sigsLoadPositions() {
@@ -10064,13 +10148,15 @@ function sigsRenderPositions() {
     const rMult  = stopDist > 0 ? (isLong ? (cur - entry) : (entry - cur)) / stopDist : 0;
     const pnlClr = pnl >= 0 ? 'var(--teal)' : 'var(--rose)';
     const typeLabel = SIG_TYPE_LABELS[p.signal_type] || p.signal_type || '';
+    const paperBadge = p.paper ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--gold);border:1px solid rgba(251,191,36,.3);border-radius:4px;padding:1px 6px">🎮 Paper</span>` : '';
 
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:14px 16px">
+    return `<div style="background:var(--surface);border:1px solid ${p.paper ? 'rgba(251,191,36,.3)' : 'var(--border)'};border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:14px 16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:15px;font-weight:700;font-family:var(--font-display)">${p.ticker}</span>
           <span style="font-size:11px;color:${bColor};font-weight:700">${p.direction.toUpperCase()}</span>
           <span style="font-size:11px;color:var(--text3)">${typeLabel}</span>
+          ${paperBadge}
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:${pnlClr}">
@@ -10105,6 +10191,7 @@ async function sigsTakeTrade(sigId) {
     const r = await fetch(`/api/signals/take/${sigId}`, {
       method: 'POST',
       headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({trading_mode: SIGNALS.trading_mode || 'live'}),
     });
     const d = await r.json();
     if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
@@ -10240,6 +10327,239 @@ function sigsSetMode(m) {
 
 async function sigsRefreshIntraday() {
   toast('Intraday signal scan is not yet available in this build', 'info');
+}
+
+// ── Practice / Live toggle ───────────────────────────────────────────────────
+
+function sigsSetTradingMode(mode) {
+  SIGNALS.trading_mode = mode;
+  const liveBtn  = document.getElementById('sig-trade-live');
+  const pracBtn  = document.getElementById('sig-trade-practice');
+  const banner   = document.getElementById('sigs-paper-banner');
+  if (liveBtn) {
+    liveBtn.style.background = mode === 'live' ? 'var(--teal)' : 'transparent';
+    liveBtn.style.color      = mode === 'live' ? '#000' : 'var(--text2)';
+  }
+  if (pracBtn) {
+    pracBtn.style.background = mode === 'practice' ? 'var(--gold)' : 'transparent';
+    pracBtn.style.color      = mode === 'practice' ? '#000' : 'var(--text2)';
+  }
+  if (banner) banner.style.display = mode === 'practice' ? 'flex' : 'none';
+  // Persist to backend config
+  fetch('/api/signals/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+    body: JSON.stringify({trading_mode: mode}),
+  }).catch(() => {});
+}
+
+// ── Backtest Engine JS ───────────────────────────────────────────────────────
+
+let _btSelectedTickers = [];
+
+const BT_SIG_NAMES = {
+  trend_pullback_long:      'Trend Pullback',
+  momentum_breakout_long:   'Momentum Breakout',
+  liquidity_sweep_long:     'Liquidity Sweep ↑',
+  mean_reversion_long:      'Mean Reversion',
+  trend_continuation_short: 'Trend Continuation ↓',
+  liquidity_sweep_short:    'Liquidity Sweep ↓',
+  momentum_breakdown_short: 'Momentum Breakdown',
+};
+
+function btInitTickers() {
+  const available = [...new Set(SIGNALS.signals.map(s => s.ticker))];
+  // Pre-select all (up to 15)
+  _btSelectedTickers = available.slice(0, 15);
+  btRenderChips();
+}
+
+function btRenderChips() {
+  const el = document.getElementById('bt-ticker-chips');
+  if (!el) return;
+  const available = [...new Set([..._btSelectedTickers, ...SIGNALS.signals.map(s => s.ticker)])];
+  if (!available.length) {
+    el.innerHTML = '<span style="font-size:12px;color:var(--text3)">Run a signal scan first to populate tickers</span>';
+    return;
+  }
+  el.innerHTML = available.map(t => {
+    const sel = _btSelectedTickers.includes(t);
+    return `<button onclick="btToggleTicker('${t}')" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid ${sel ? 'var(--teal)' : 'var(--border)'};background:${sel ? 'rgba(20,184,166,.15)' : 'var(--surface2)'};color:${sel ? 'var(--teal)' : 'var(--text2)'};cursor:pointer;transition:all .15s;font-weight:${sel ? '600' : '400'}">${t}</button>`;
+  }).join('')
+  + `<button onclick="btAddTicker()" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px dashed var(--border);background:transparent;color:var(--text3);cursor:pointer">+ Add</button>`;
+}
+
+function btToggleTicker(t) {
+  const i = _btSelectedTickers.indexOf(t);
+  if (i >= 0) { _btSelectedTickers.splice(i, 1); }
+  else { if (_btSelectedTickers.length >= 20) { toast('Max 20 tickers', 'warning'); return; } _btSelectedTickers.push(t); }
+  btRenderChips();
+}
+
+function btAddTicker() {
+  const t = prompt('Enter ticker (e.g. AAPL, BTC-USD, TSCO.L):');
+  if (!t) return;
+  const clean = t.trim().toUpperCase();
+  if (!_btSelectedTickers.includes(clean)) _btSelectedTickers.push(clean);
+  btRenderChips();
+}
+
+async function _btPollUntilDone() {
+  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  while (true) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const resp = await fetch('/api/signals/backtest-status', {headers: hdrs});
+      if (!resp.ok) break;
+      const d  = await resp.json();
+      const st = d.state || {};
+      const tot = st.total || 1; const done = st.done || 0;
+      const pct = Math.round(done / tot * 100);
+      const bar = document.getElementById('bt-progress-bar');
+      const lbl = document.getElementById('bt-progress-label');
+      const pe  = document.getElementById('bt-progress-pct');
+      if (bar) bar.style.width = pct + '%';
+      if (lbl) lbl.textContent = `Backtesting ${done}/${tot} tickers…`;
+      if (pe)  pe.textContent  = pct + '%';
+      if (!st.running) {
+        if (d.results) btRenderResults(d.results);
+        break;
+      }
+    } catch(e) { break; }
+  }
+}
+
+async function sigsRunBacktest() {
+  if (!_btSelectedTickers.length) {
+    // Auto-populate from signals if empty
+    btInitTickers();
+    if (!_btSelectedTickers.length) { toast('No tickers selected — run a scan first', 'warning'); return; }
+  }
+
+  const btn  = document.getElementById('bt-run-btn');
+  const prog = document.getElementById('bt-progress-wrap');
+  if (btn)  { btn.disabled = true; btn.textContent = 'Running…'; }
+  if (prog) prog.style.display = 'flex';
+  document.getElementById('bt-empty')?.style && (document.getElementById('bt-empty').style.display = 'none');
+
+  try {
+    const r = await fetch('/api/signals/backtest', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+      body: JSON.stringify({tickers: _btSelectedTickers}),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    // Poll until done
+    await _btPollUntilDone();
+  } catch(e) {
+    toast('Backtest failed: ' + e.message, 'error');
+  }
+
+  if (btn)  { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;vertical-align:middle"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Run Backtest'; }
+  if (prog) prog.style.display = 'none';
+}
+
+function btRenderResults(results) {
+  if (!results || !results.stats) return;
+  const stats  = results.stats;
+  const resEl  = document.getElementById('bt-results');
+  const emptyEl = document.getElementById('bt-empty');
+  if (resEl)  resEl.style.display  = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  const lastEl = document.getElementById('bt-last-ran');
+  if (lastEl && results.ran_at) lastEl.textContent = 'Last run: ' + new Date(results.ran_at).toLocaleDateString();
+
+  // Stats grid
+  const sg = document.getElementById('bt-stats-grid');
+  if (sg) {
+    const ret = stats.total_return_pct;
+    const wr  = stats.win_rate;
+    sg.innerHTML = [
+      ['Total Return',   (ret >= 0 ? '+' : '') + ret + '%',         ret >= 0 ? 'var(--teal)' : 'var(--rose)'],
+      ['Win Rate',       wr + '%',                                   wr >= 55 ? 'var(--teal)' : wr >= 45 ? 'var(--gold)' : 'var(--rose)'],
+      ['Sharpe Ratio',   stats.sharpe,                               stats.sharpe >= 1 ? 'var(--teal)' : stats.sharpe >= 0.5 ? 'var(--gold)' : 'var(--rose)'],
+      ['Max Drawdown',   stats.max_drawdown_pct + '%',               stats.max_drawdown_pct <= 10 ? 'var(--teal)' : stats.max_drawdown_pct <= 20 ? 'var(--gold)' : 'var(--rose)'],
+      ['Profit Factor',  stats.profit_factor + 'x',                  stats.profit_factor >= 1.5 ? 'var(--teal)' : 'var(--gold)'],
+      ['Total Trades',   stats.total_trades,                         'var(--text)'],
+      ['Avg Win',        '+' + stats.avg_win_pct + '%',              'var(--teal)'],
+      ['Avg Loss',       stats.avg_loss_pct + '%',                   'var(--rose)'],
+    ].map(([lbl, val, clr]) =>
+      `<div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${lbl}</div>
+        <div style="font-size:16px;font-weight:700;color:${clr};font-family:var(--font-mono)">${val}</div>
+      </div>`
+    ).join('');
+  }
+
+  // Equity curve
+  if (stats.equity_curve && stats.equity_curve.length > 1) {
+    const labels = stats.equity_curve.map(p => p[0]);
+    const vals   = stats.equity_curve.map(p => p[1]);
+    const pos    = vals[vals.length - 1] >= 1.0;
+    mkChart('bt-equity-chart', 'line', {
+      labels,
+      datasets: [{
+        data: vals,
+        borderColor: pos ? 'rgb(20,184,166)' : 'rgb(251,113,133)',
+        backgroundColor: pos ? 'rgba(20,184,166,.08)' : 'rgba(251,113,133,.08)',
+        borderWidth: 2, fill: true, tension: 0.3, pointRadius: 0,
+      }],
+    }, {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {display: false},
+        tooltip: {callbacks: {label: ctx => ((ctx.raw - 1) * 100).toFixed(1) + '%'}}
+      },
+      scales: {
+        x: {ticks: {maxTicksLimit: 8, color: 'var(--text3)', font: {size: 10}}, grid: {color: 'rgba(255,255,255,.04)'}},
+        y: {ticks: {color: 'var(--text3)', font: {size: 10}, callback: v => ((v - 1) * 100).toFixed(0) + '%'}, grid: {color: 'rgba(255,255,255,.04)'}},
+      },
+    });
+  }
+
+  // Per-ticker summary
+  const ptEl = document.getElementById('bt-per-ticker');
+  if (ptEl && results.per_ticker && Object.keys(results.per_ticker).length) {
+    const rows = Object.entries(results.per_ticker).sort((a, b) => b[1].total_return_pct - a[1].total_return_pct);
+    ptEl.innerHTML = `<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500">Per ticker</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${rows.map(([t, d]) => {
+          const ret = d.total_return_pct;
+          const clr = ret >= 0 ? 'var(--teal)' : 'var(--rose)';
+          return `<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;min-width:120px">
+            <div style="font-size:12px;font-weight:700;font-family:var(--font-display)">${t}</div>
+            <div style="font-size:13px;font-weight:600;color:${clr};font-family:var(--font-mono)">${ret >= 0 ? '+' : ''}${ret}%</div>
+            <div style="font-size:10px;color:var(--text3)">${d.total_trades} trades · ${d.win_rate}% win</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
+
+  // Per-signal-type table
+  const stEl = document.getElementById('bt-sig-table');
+  if (stEl && stats.signal_breakdown?.length) {
+    stEl.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:6px 8px;color:var(--text3);font-weight:500">Signal Type</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Trades</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Win Rate</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Avg P&amp;L</th>
+      </tr></thead>
+      <tbody>${stats.signal_breakdown.map(row => {
+        const wc = row.win_rate >= 55 ? 'var(--teal)' : row.win_rate >= 45 ? 'var(--gold)' : 'var(--rose)';
+        const pc = row.avg_pnl >= 0 ? 'var(--teal)' : 'var(--rose)';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:8px;color:var(--text)">${BT_SIG_NAMES[row.signal_type] || row.signal_type}</td>
+          <td style="padding:8px;text-align:right;color:var(--text2);font-family:var(--font-mono)">${row.total}</td>
+          <td style="padding:8px;text-align:right;color:${wc};font-family:var(--font-mono);font-weight:600">${row.win_rate}%</td>
+          <td style="padding:8px;text-align:right;color:${pc};font-family:var(--font-mono)">${row.avg_pnl >= 0 ? '+' : ''}${row.avg_pnl}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  }
 }
 
 function sigsRenderHistory() {
