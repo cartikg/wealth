@@ -6900,28 +6900,36 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
 
     sigs = []
 
+    # ── Regime-agnostic trend helpers ─────────────────────────────────────────
+    # short_uptrend: price in short-term momentum, works in corrections too
+    short_uptrend   = e8 > e21
+    short_downtrend = e8 < e21
+
     # ── 1. trend_pullback_long ────────────────────────────────────────────────
-    near_ema21 = abs(c - e21) / e21 < 0.025 if e21 > 0 else False  # within 2.5% of EMA21
-    if uptrend and near_ema21 and 38 <= r <= 65 and vr > 0.7 and weekly_bullish:
+    # Uses short-term momentum (e8>e21) so fires in corrections/early recoveries,
+    # not just confirmed long-term uptrends.
+    near_ema21 = abs(c - e21) / e21 < 0.035 if e21 > 0 else False  # within 3.5% of EMA21
+    if short_uptrend and near_ema21 and 35 <= r <= 68 and vr > 0.6:
         stop = c - 1.8 * atr; target = c + 3.5 * (c - stop); dist = c - stop
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
         strength = 0.60 + 0.25 * (sum([near_ema21, 42 <= r <= 62, vr > 0.9, weekly_bullish, uptrend]) / 5)
-        expl = f'Pulled back to 21 EMA in uptrend. RSI {r:.0f} bullish zone. Vol {vr:.1f}x avg.{score_str}'
+        expl = (f'Pullback to 21 EMA with short-term momentum. RSI {r:.0f}. '
+                f'Vol {vr:.1f}x avg.{score_str}')
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','trend_pullback_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 2. momentum_breakout_long ─────────────────────────────────────────────
-    breaks_high = c > recent_high20 * 0.998  # within 0.2% of 20-day high counts as breakout
-    if breaks_high and vr > 1.2 and 50 <= r <= 80 and adx > 18:
+    breaks_high = c > recent_high20 * 0.995  # within 0.5% of 20-day high counts
+    if breaks_high and vr > 1.2 and 48 <= r <= 82 and adx > 16:
         stop = float(np.min(lows[-3:])) if len(lows) >= 3 else c - 1.5 * atr
         target = c + 4.0 * (c - stop); dist = c - stop
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
         strength = 0.62 + 0.28 * (sum([vr > 1.3, vr > 1.5, adx > 25, 55 <= r <= 78]) / 4)
-        expl = f'Breaking 20-day high {recent_high20:.2f} on {vr:.1f}x volume. ADX {adx:.0f} momentum.{score_str}'
+        expl = f'At/above 20-day high {recent_high20:.2f} on {vr:.1f}x volume. ADX {adx:.0f} momentum.{score_str}'
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','momentum_breakout_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 3. liquidity_sweep_long ───────────────────────────────────────────────
     swept_low = prev_low < recent_low20 and c > recent_low20
-    disp_candle = (c - l) > 1.5 * atr
+    disp_candle = (c - l) > 1.2 * atr  # slightly relaxed from 1.5x
     if swept_low and disp_candle:
         stop = prev_low - 0.2 * atr; target = c + 4.0 * (c - stop); dist = c - stop
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
@@ -6930,27 +6938,35 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','liquidity_sweep_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 4. mean_reversion_long ────────────────────────────────────────────────
-    ranging = not uptrend and not downtrend and adx < 25
-    at_lower_bb = bbl > 0 and c <= bbl * 1.005
-    if ranging and at_lower_bb and stk < 15 and r < 32:
+    # Fires for extreme oversold (RSI<32) regardless of trend,
+    # OR moderate oversold (RSI<38) in a ranging market.
+    ranging    = not uptrend and not downtrend and adx < 28
+    at_lower_bb = bbl > 0 and c <= bbl * 1.015  # within 1.5% of lower Bollinger Band
+    extreme_oversold  = r < 32 and stk < 28     # very oversold — bounce likely in any regime
+    moderate_oversold = ranging and r < 40 and stk < 32  # ranging market, less extreme
+    if at_lower_bb and (extreme_oversold or moderate_oversold):
         stop = c - 1.5 * atr; target = c + 3.0 * (c - stop); dist = c - stop
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        strength = 0.60 + 0.25 * (sum([at_lower_bb, stk < 15, r < 32, ranging]) / 4)
-        expl = f'Price at lower Bollinger Band in ranging market. RSI {r:.0f}, Stochastic {stk:.0f} oversold.{score_str}'
+        strength = 0.60 + 0.25 * (sum([at_lower_bb, stk < 20, r < 30, ranging or extreme_oversold]) / 4)
+        regime_note = 'ranging market' if ranging else 'extreme oversold'
+        expl = f'Price at lower Bollinger Band — {regime_note}. RSI {r:.0f}, Stoch {stk:.0f}.{score_str}'
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','mean_reversion_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 5. trend_continuation_short ──────────────────────────────────────────
-    near_ema21_s = abs(c - e21) / e21 < 0.025 if e21 > 0 else False  # within 2.5% of EMA21
-    if downtrend and near_ema21_s and 35 <= r <= 62 and weekly_bearish:
+    # Uses short-term momentum (e8<e21) so fires in corrections, not just confirmed downtrends.
+    near_ema21_s = abs(c - e21) / e21 < 0.035 if e21 > 0 else False  # within 3.5%
+    # Don't short when already extremely oversold (bounce risk)
+    if short_downtrend and near_ema21_s and 38 <= r <= 65 and not (r < 32):
         stop = c + 1.8 * atr; target = c - 3.5 * (stop - c); dist = stop - c
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
         strength = 0.60 + 0.25 * (sum([near_ema21_s, downtrend, 38 <= r <= 58, weekly_bearish]) / 4)
-        expl = f'Bearish trend continuation: bounce to 21 EMA rejected. RSI {r:.0f} in bearish zone, weekly trend down.{score_str}'
+        expl = (f'Short-term downtrend: bounce to 21 EMA rejected. RSI {r:.0f}. '
+                f'{"Weekly trend down." if weekly_bearish else ""}{score_str}')
         sigs.append(_apply_fundamental_check(_make_signal(ticker,'short','trend_continuation_short',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 6. liquidity_sweep_short ──────────────────────────────────────────────
     swept_high = prev_high > recent_high20 and c < recent_high20
-    disp_candle_s = (h - c) > 1.5 * atr
+    disp_candle_s = (h - c) > 1.2 * atr  # slightly relaxed from 1.5x
     if swept_high and disp_candle_s:
         stop = prev_high + 0.2 * atr; target = c - 4.0 * (stop - c); dist = stop - c
         sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
