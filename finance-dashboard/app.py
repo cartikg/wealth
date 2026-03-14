@@ -5847,20 +5847,28 @@ def fetch_and_cache_ticker(ticker, force=False):
         raw_news = t.news or []
         new_news = []
         for item in raw_news[:8]:
-            headline = item.get('title', '')
-            pub_dt = item.get('providerPublishTime')
-            if pub_dt:
-                news_date = datetime.utcfromtimestamp(pub_dt).strftime('%Y-%m-%d')
+            # yfinance ≥0.2.50 nests data under item['content']
+            content  = item.get('content') or item
+            headline = content.get('title') or item.get('title', '')
+            if not headline:
+                continue
+            # Date: new format uses ISO pubDate, old format uses UNIX providerPublishTime
+            pub_date_str = content.get('pubDate') or content.get('displayTime', '')
+            if pub_date_str:
+                news_date = pub_date_str[:10]
             else:
-                news_date = today_str
+                pub_dt = item.get('providerPublishTime')
+                news_date = datetime.utcfromtimestamp(pub_dt).strftime('%Y-%m-%d') if pub_dt else today_str
+            source = (content.get('provider') or {}).get('displayName') or item.get('publisher', '')
+            url    = (content.get('canonicalUrl') or {}).get('url') or item.get('link', '')
             # Check if already stored
             if not any(n.get('headline') == headline for n in news_list):
                 new_news.append({
                     'date': news_date,
                     'headline': headline,
-                    'source': item.get('publisher', ''),
+                    'source': source,
                     'impact': 'neutral',  # will classify below
-                    'url': item.get('link', '')
+                    'url': url,
                 })
 
         # Classify new news via Claude Haiku if available
@@ -6729,6 +6737,43 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
     if composite:
         score_str = f' {ticker} scores {composite}/100 in Stock Intelligence.'
 
+    # Analyst consensus for conflict detection
+    _sb  = int(rd.get('analyst_strong_buy', 0) or 0)
+    _b   = int(rd.get('analyst_buy',        0) or 0)
+    _h   = int(rd.get('analyst_hold',       0) or 0)
+    _s   = int(rd.get('analyst_sell',       0) or 0)
+    _ss  = int(rd.get('analyst_strong_sell',0) or 0)
+    _tot = _sb + _b + _h + _s + _ss
+    analyst_bull_pct = (_sb + _b) / _tot if _tot >= 3 else None   # % buy/strong-buy
+    analyst_bear_pct = (_s + _ss) / _tot  if _tot >= 3 else None  # % sell/strong-sell
+
+    def _apply_fundamental_check(sig):
+        """Penalise strength when signal direction conflicts with analyst consensus,
+        and append a conflict warning to the explanation."""
+        direction  = sig['direction']
+        strength   = sig['strength']
+        expl       = sig['explanation']
+        conflict   = False
+        conflict_note = ''
+
+        if analyst_bull_pct is not None and direction == 'short' and analyst_bull_pct >= 0.60:
+            # Shorting into strong buy consensus — penalise
+            strength    = max(0.60, strength - 0.15)
+            conflict    = True
+            conflict_note = (f' ⚠️ Conflicts with analyst consensus ({int(analyst_bull_pct*100)}%'
+                             f' buy/{_tot} analysts) — technical SHORT vs fundamental BULLISH.')
+        elif analyst_bear_pct is not None and direction == 'long' and analyst_bear_pct >= 0.50:
+            # Going long into strong sell consensus — penalise
+            strength    = max(0.60, strength - 0.10)
+            conflict    = True
+            conflict_note = (f' ⚠️ Analyst consensus is bearish ({int(analyst_bear_pct*100)}%'
+                             f' sell/{_tot} analysts) — treat this LONG signal with caution.')
+
+        sig['strength']     = round(strength, 4)
+        sig['explanation']  = expl + conflict_note
+        sig['analyst_conflict'] = conflict
+        return sig
+
     sigs = []
 
     # ── 1. trend_pullback_long ────────────────────────────────────────────────
@@ -6742,8 +6787,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.60 + 0.25 * quality
         expl = (f'Pulled back to 21 EMA in uptrend. RSI {r:.0f} in bullish zone.'
                 f' Volume at {vr:.1f}x average.{score_str}')
-        sigs.append(_make_signal(ticker, 'long', 'trend_pullback_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'trend_pullback_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     # ── 2. momentum_breakout_long ─────────────────────────────────────────────
     breaks_high = c > recent_high20 and prev_low < recent_high20  # breakout candle
@@ -6756,8 +6801,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.62 + 0.28 * quality
         expl = (f'Breaking 20-day high of {recent_high20:.2f} on {vr:.1f}x volume.'
                 f' ADX {adx:.0f} confirms momentum.{score_str}')
-        sigs.append(_make_signal(ticker, 'long', 'momentum_breakout_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'momentum_breakout_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     # ── 3. liquidity_sweep_long ───────────────────────────────────────────────
     swept_low = prev_low < recent_low20 and c > recent_low20  # swept below then closed back
@@ -6771,8 +6816,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.63 + 0.27 * quality
         expl = (f'Liquidity sweep below {recent_low20:.2f} rejected with strong close.'
                 f' Displacement candle shows buyer absorption.{score_str}')
-        sigs.append(_make_signal(ticker, 'long', 'liquidity_sweep_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'liquidity_sweep_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     # ── 4. mean_reversion_long ────────────────────────────────────────────────
     ranging = not uptrend and not downtrend and adx < 25
@@ -6786,8 +6831,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.60 + 0.25 * quality
         expl = (f'Price at lower Bollinger Band in ranging market. RSI {r:.0f},'
                 f' Stochastic {stk:.0f} both oversold.{score_str}')
-        sigs.append(_make_signal(ticker, 'long', 'mean_reversion_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'mean_reversion_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     # ── 5. trend_continuation_short ──────────────────────────────────────────
     near_ema21_short = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
@@ -6800,8 +6845,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.60 + 0.25 * quality
         expl = (f'Bearish trend continuation: bounce to 21 EMA rejected.'
                 f' RSI {r:.0f} in bearish zone, weekly trend down.{score_str}')
-        sigs.append(_make_signal(ticker, 'short', 'trend_continuation_short',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'short', 'trend_continuation_short',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     # ── 6. liquidity_sweep_short ──────────────────────────────────────────────
     swept_high = prev_high > recent_high20 and c < recent_high20
@@ -6815,8 +6860,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.63 + 0.27 * quality
         expl = (f'Liquidity sweep above {recent_high20:.2f} rejected with strong sell candle.'
                 f' Sellers absorbed supply at highs.{score_str}')
-        sigs.append(_make_signal(ticker, 'short', 'liquidity_sweep_short',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'short', 'liquidity_sweep_short',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     # ── 7. momentum_breakdown_short ──────────────────────────────────────────
     breaks_low = c < recent_low20 and prev_high > recent_low20
@@ -6829,8 +6874,8 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         strength = 0.62 + 0.28 * quality
         expl = (f'Breaking 20-day low of {recent_low20:.2f} on {vr:.1f}x volume.'
                 f' ADX {adx:.0f} — momentum accelerating.{score_str}')
-        sigs.append(_make_signal(ticker, 'short', 'momentum_breakdown_short',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'short', 'momentum_breakdown_short',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
 
     return sigs
 

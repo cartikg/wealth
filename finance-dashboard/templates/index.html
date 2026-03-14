@@ -1812,6 +1812,10 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div>
           <div style="font-family:var(--font-display);font-size:26px;font-weight:600">⚡ Trading Signals</div>
           <div style="color:var(--text3);font-size:13px;margin-top:3px">Technical entry/exit signals with position sizing</div>
+          <div style="color:var(--text3);font-size:11px;margin-top:5px;display:flex;align-items:center;gap:4px">
+            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Scans your portfolio, watchlist &amp; Stock Intelligence tickers only — add tickers to expand coverage
+          </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <!-- Mode toggle -->
@@ -9837,10 +9841,11 @@ function sigsRenderSignalCard(s) {
     ? Math.abs((s.target - s.entry_price) / (s.entry_price - s.stop_loss)).toFixed(1)
     : '—';
 
-  // Check if research exists in SI
-  const siHasData = window.SI && window.SI.research && window.SI.research[s.ticker];
+  const conflictBadge = s.analyst_conflict
+    ? `<span style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.3);padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600">⚠ vs Analysts</span>`
+    : '';
 
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:16px 18px;position:relative">
+  return `<div style="background:var(--surface);border:1px solid ${s.analyst_conflict ? 'rgba(251,191,36,.3)' : 'var(--border)'};border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:16px 18px;position:relative">
     <!-- Header row -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -9848,6 +9853,7 @@ function sigsRenderSignalCard(s) {
         <span style="background:${badgeBg};color:${badgeClr};padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:.05em">${s.direction.toUpperCase()}</span>
         <span style="background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:8px;font-size:11px">${typeLabel}</span>
         <span style="background:var(--surface2);color:var(--text3);padding:2px 8px;border-radius:8px;font-size:11px">${engLabel}</span>
+        ${conflictBadge}
       </div>
       <!-- Strength bar -->
       <div style="display:flex;align-items:center;gap:8px;min-width:140px">
