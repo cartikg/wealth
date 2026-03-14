@@ -9812,6 +9812,8 @@ const REGIME_META = {
 async function renderSignals() {
   const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
 
+  _sigsPrewarm(); // fire-and-forget wake-up ping so server is warm before user clicks Scan
+
   // Load saved config (universe + trading_mode)
   try {
     const rc = await fetch('/api/signals/config', {headers: hdrs});
@@ -9945,25 +9947,41 @@ async function _sigsPollUntilDone() {
   }
 }
 
-async function _sigsFetch(url, retries = 2) {
+// Retry delays covering Render free-tier cold start (can take up to 60 s)
+const _SIGS_RETRY_DELAYS = [8000, 15000, 20000, 20000];  // 63 s total
+
+async function _sigsFetch(url, retryDelays) {
+  retryDelays = retryDelays || _SIGS_RETRY_DELAYS;
   const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
-  for (let attempt = 1; attempt <= retries; attempt++) {
+  const maxAttempts = retryDelays.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const r = await fetch(url, {headers: hdrs});
-      return r;  // success — return even if !r.ok (caller checks)
+      return r;  // success — caller checks r.ok
     } catch(e) {
-      // Network-level failure (server sleeping / restarting / unreachable)
-      const isLast = attempt === retries;
-      if (isLast) throw e;
-      // Show wake-up message and wait before retry
-      const btn = document.getElementById('sigs-refresh-btn');
-      const lbl = document.getElementById('sigs-progress-label');
-      const wait = attempt * 5000;  // 5 s then 10 s
-      if (btn) btn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Waking up…`;
-      if (lbl) lbl.textContent = `Server waking up — retry ${attempt}/${retries - 1}…`;
-      await new Promise(res => setTimeout(res, wait));
+      if (attempt === maxAttempts) throw e;
+      // Tick-down countdown while waiting to retry
+      const wait = retryDelays[attempt - 1];
+      const secs = Math.round(wait / 1000);
+      const lbl  = document.getElementById('sigs-progress-label');
+      const btn  = document.getElementById('sigs-refresh-btn');
+      if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Waking up…';
+      for (let s = secs; s > 0; s--) {
+        if (lbl) lbl.textContent = `Server waking up — retrying in ${s}s (${attempt}/${maxAttempts - 1})…`;
+        await new Promise(res => setTimeout(res, 1000));
+      }
     }
   }
+}
+
+// Pre-warm: ping /api/health when Signals tab opens so the server is
+// already awake by the time the user clicks Scan.
+async function _sigsPrewarm() {
+  try {
+    await fetch('/api/health', {
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+    });
+  } catch(e) { /* silent — just a wake hint */ }
 }
 
 async function sigsRefresh() {
