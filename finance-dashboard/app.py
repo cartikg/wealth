@@ -239,6 +239,13 @@ def migrate_data(data):
     if 'watchlist' not in data:
         data['watchlist'] = []
 
+    # Purge blank-headline news entries (caused by old yfinance API format).
+    # They will be re-fetched with correct headlines on next Fetch Live.
+    for ticker_rd, entry in data.get('research_data', {}).items():
+        cleaned = [n for n in entry.get('news', []) if n.get('headline', '').strip()]
+        if len(cleaned) != len(entry.get('news', [])):
+            entry['news'] = cleaned
+
     # Trading Signals: signals_data store
     if 'signals_data' not in data:
         data['signals_data'] = {
@@ -247,6 +254,9 @@ def migrate_data(data):
                 'max_positions': 4,
                 'max_drawdown': 0.20,
                 'daily_loss_limit': 0.03,
+                'scan_universe': 'global',
+                'min_price': 0.5,
+                'min_volume': 500000,
                 'engines': {
                     'crypto_spot':  {'capital': 7500,  'leverage': 1},
                     'crypto_perps': {'capital': 3750,  'leverage': 3},
@@ -271,6 +281,9 @@ def migrate_data(data):
         cfg.setdefault('max_positions', 4)
         cfg.setdefault('max_drawdown', 0.20)
         cfg.setdefault('daily_loss_limit', 0.03)
+        cfg.setdefault('scan_universe', 'global')
+        cfg.setdefault('min_price', 0.5)
+        cfg.setdefault('min_volume', 500000)
         cfg.setdefault('mode', 'B')
         eng = cfg.setdefault('engines', {})
         for ename, defaults in [
@@ -6646,29 +6659,134 @@ def _make_signal(ticker, direction, signal_type, entry, stop, target, pos_size, 
     }
 
 
-def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
-    """Compute all applicable signals for one ticker."""
-    import numpy as np
+# ── Curated scan universes ────────────────────────────────────────────────────
+# Quality stocks only: large/mid-cap, high liquidity, major exchanges.
+# Excludes penny stocks, meme coins, and low-float names.
+
+UNIVERSE_NASDAQ100 = [
+    'AAPL','MSFT','NVDA','AMZN','META','GOOGL','TSLA','AVGO','COST','NFLX',
+    'AMD','ADBE','QCOM','INTC','PYPL','INTU','CMCSA','PEP','TMUS','CSCO',
+    'HON','AMGN','ISRG','SBUX','MDLZ','REGN','GILD','VRTX','MU','KLAC',
+    'LRCX','SNPS','CDNS','PANW','CRWD','ZS','DDOG','MRVL','TEAM','WDAY',
+    'FTNT','ABNB','ORLY','CTAS','PCAR','ODFL','MNST','FAST','ROST','PAYX',
+    'SNOW','COIN','PLTR','UBER','HOOD',
+]
+
+UNIVERSE_SP500_TOP50 = [
+    'BRK-B','JPM','V','MA','UNH','JNJ','PG','HD','CVX','MRK',
+    'ABBV','LLY','PFE','KO','WMT','BAC','DIS','VZ','T','CRM',
+    'ACN','NKE','MCD','ABT','TMO','DHR','NEE','LIN','RTX','GE',
+    'IBM','CAT','DE','MMM','GS','MS','BLK','SPGI','ICE','CME',
+    'AXP','USB','WFC','C','BMY','MDT','SYK','ZTS','ELV','HUM',
+]
+
+UNIVERSE_FTSE100 = [
+    'SHEL.L','AZN.L','HSBA.L','ULVR.L','BP.L','RIO.L','GSK.L','DGE.L',
+    'BATS.L','REL.L','NG.L','LSEG.L','NWG.L','BT-A.L','VOD.L','LLOY.L',
+    'BARC.L','GLEN.L','AAL.L','PRU.L','EXPN.L','CPG.L','IMB.L','SSE.L',
+    'RKT.L','BNZL.L','WPP.L','STAN.L','LAND.L','SEGRO.L','PSN.L',
+    'SMDS.L','INF.L','JD.L','SBRY.L','MKS.L','AUTO.L','RMV.L','HLMA.L',
+    'EZJ.L','IAG.L','TSCO.L','OCDO.L','ABF.L','PSON.L','FERG.L','III.L',
+    'CCH.L','CRH.L','FLTR.L',
+]
+
+UNIVERSE_CRYPTO = [
+    'BTC-USD','ETH-USD','SOL-USD','XRP-USD','BNB-USD','ADA-USD',
+    'AVAX-USD','DOGE-USD','DOT-USD','MATIC-USD','LINK-USD','LTC-USD',
+    'UNI-USD','ATOM-USD','NEAR-USD',
+]
+
+SCAN_UNIVERSES = {
+    'nasdaq100': UNIVERSE_NASDAQ100,
+    'sp500':     UNIVERSE_SP500_TOP50,
+    'ftse100':   UNIVERSE_FTSE100,
+    'crypto':    UNIVERSE_CRYPTO,
+    'global':    UNIVERSE_NASDAQ100 + UNIVERSE_SP500_TOP50 + UNIVERSE_FTSE100 + UNIVERSE_CRYPTO,
+}
+
+# In-memory cache for batch-downloaded price data (avoid re-fetching within 30 min)
+_batch_hist_cache     = {}   # ticker → DataFrame
+_batch_hist_cache_ts  = 0.0  # last full-batch fetch timestamp
+
+
+def _fetch_batch_universe(tickers):
+    """Batch-download 8 months of daily OHLCV for all tickers using yfinance threads.
+    Returns dict: ticker (upper) → DataFrame (Close/High/Low/Volume columns).
+    """
+    import time
+    import yfinance as yf
+    import pandas as pd
+
+    global _batch_hist_cache, _batch_hist_cache_ts
+
+    now = time.time()
+    # Use cache if less than 30 minutes old
+    if _batch_hist_cache and now - _batch_hist_cache_ts < 1800:
+        print(f'[signals] using cached batch data ({len(_batch_hist_cache)} tickers)')
+        return _batch_hist_cache
+
+    print(f'[signals] batch downloading {len(tickers)} tickers…')
+    result = {}
+
+    # yfinance batch download (much faster than individual calls)
     try:
-        import yfinance as yf
-    except ImportError:
-        return []
+        raw = yf.download(
+            tickers=' '.join(tickers),
+            period='8mo',
+            interval='1d',
+            group_by='ticker',
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+        # Multi-ticker result has a 2-level column index: (field, ticker)
+        if isinstance(raw.columns, pd.MultiIndex):
+            for t in tickers:
+                t_up = t.upper()
+                try:
+                    df = raw.xs(t, level=1, axis=1).copy() if t in raw.columns.get_level_values(1) else None
+                    if df is not None and len(df) >= 55 and 'Close' in df.columns:
+                        result[t_up] = df
+                except Exception:
+                    pass
+        else:
+            # Single ticker returned flat
+            if len(raw) >= 55 and 'Close' in raw.columns:
+                result[tickers[0].upper()] = raw
+    except Exception as e:
+        print(f'[signals] batch download error: {e}')
+
+    _batch_hist_cache    = result
+    _batch_hist_cache_ts = now
+    print(f'[signals] batch download complete: {len(result)} tickers with data')
+    return result
+
+
+def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
+    """Compute all applicable signals for one ticker.
+    If hist is provided (pre-fetched DataFrame), skip the individual yfinance download.
+    """
+    import numpy as np
 
     yf_sym = ticker
-    crypto_bases = {'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'AVAX', 'LINK', 'DOT', 'LTC'}
+    crypto_bases = {'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'AVAX', 'LINK', 'DOT', 'LTC',
+                    'BNB', 'UNI', 'ATOM', 'NEAR'}
     if ticker.upper() in crypto_bases:
         yf_sym = ticker.upper() + '-USD'
 
-    try:
-        hist = yf.download(yf_sym, period='8mo', interval='1d', progress=False, auto_adjust=True)
-    except Exception:
-        return []
+    if hist is None:
+        try:
+            import yfinance as yf
+            hist = yf.download(yf_sym, period='8mo', interval='1d', progress=False, auto_adjust=True)
+        except Exception:
+            return []
 
     if hist is None or len(hist) < 55:
         return []
 
     # Flatten MultiIndex columns (yfinance 0.2+)
     if hasattr(hist.columns, 'get_level_values'):
+        hist = hist.copy()
         hist.columns = hist.columns.get_level_values(0)
 
     closes  = hist['Close'].values.astype(float).flatten()
@@ -6679,6 +6797,16 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
     if len(closes) < 55:
         return []
 
+    # ── Quality filter — skip penny stocks and illiquid names ────────────────
+    min_price  = float(cfg.get('min_price',  0.5))
+    min_volume = float(cfg.get('min_volume', 500_000))
+    if closes[-1] < min_price:
+        return []
+    avg_vol_20 = float(volumes[-20:].mean()) if len(volumes) >= 20 else 0
+    if avg_vol_20 < min_volume:
+        return []
+
+    # ── Indicators ───────────────────────────────────────────────────────────
     ema8   = _ema(closes, 8)
     ema21  = _ema(closes, 21)
     ema50  = _ema(closes, 50)
@@ -6694,83 +6822,56 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
         avg = np.mean(volumes[i - 20:i])
         vol_ratio[i] = volumes[i] / avg if avg > 0 else 1.0
 
-    # Current bar values
-    c   = float(closes[-1])
-    h   = float(highs[-1])
-    l   = float(lows[-1])
-    e8  = float(ema8[-1])
-    e21 = float(ema21[-1])
-    e50 = float(ema50[-1])
-    e200= float(ema200[-1])
-    r   = float(rsi14[-1])
-    atr = float(atr14[-1])
-    adx = float(adx14[-1])
-    stk = float(stoch_k[-1])
-    vr  = float(vol_ratio[-1])
-    bbl = float(bb_lower[-1])
-    bbu = float(bb_upper[-1])
+    c   = float(closes[-1]);  h   = float(highs[-1]);  l   = float(lows[-1])
+    e8  = float(ema8[-1]);    e21 = float(ema21[-1]);  e50 = float(ema50[-1])
+    e200= float(ema200[-1]);  r   = float(rsi14[-1]);  atr = float(atr14[-1])
+    adx = float(adx14[-1]);   stk = float(stoch_k[-1]); vr = float(vol_ratio[-1])
+    bbl = float(bb_lower[-1]); bbu = float(bb_upper[-1])
 
     if atr <= 0:
         return []
 
-    # Previous bars for sweep logic
     recent_high20 = float(np.max(highs[-22:-1])) if len(highs) >= 22 else float(highs[-1])
-    recent_low20  = float(np.min(lows[-22:-1]))  if len(lows) >= 22 else float(lows[-1])
-    prev_low      = float(lows[-2])
-    prev_high     = float(highs[-2])
+    recent_low20  = float(np.min(lows[-22:-1]))  if len(lows)  >= 22 else float(lows[-1])
+    prev_low      = float(lows[-2]);  prev_high = float(highs[-2])
 
-    # Regime
-    uptrend   = e50 > e200 and e8 > e21
-    downtrend = e50 < e200 and e8 < e21
+    uptrend        = e50 > e200 and e8 > e21
+    downtrend      = e50 < e200 and e8 < e21
     weekly_bullish = c > float(closes[-6]) and e50 > e200
     weekly_bearish = c < float(closes[-6]) and e50 < e200
 
-    engine = _pick_engine(ticker, cfg)
-    engines_cfg = cfg.get('engines', {})
-    engine_cap  = float((engines_cfg.get(engine) or {}).get('capital', 5000))
+    engine      = _pick_engine(ticker, cfg)
+    engine_cap  = float((cfg.get('engines', {}).get(engine) or {}).get('capital', 5000))
     risk_amt    = engine_cap * risk_pct
     max_pos_val = engine_cap * 0.30
 
-    rd = data.get('research_data', {}).get(ticker.upper(), {})
+    rd        = data.get('research_data', {}).get(ticker.upper(), {})
     score_str = ''
     composite = rd.get('composite')
     if composite:
         score_str = f' {ticker} scores {composite}/100 in Stock Intelligence.'
 
-    # Analyst consensus for conflict detection
     _sb  = int(rd.get('analyst_strong_buy', 0) or 0)
     _b   = int(rd.get('analyst_buy',        0) or 0)
     _h   = int(rd.get('analyst_hold',       0) or 0)
     _s   = int(rd.get('analyst_sell',       0) or 0)
     _ss  = int(rd.get('analyst_strong_sell',0) or 0)
     _tot = _sb + _b + _h + _s + _ss
-    analyst_bull_pct = (_sb + _b) / _tot if _tot >= 3 else None   # % buy/strong-buy
-    analyst_bear_pct = (_s + _ss) / _tot  if _tot >= 3 else None  # % sell/strong-sell
+    analyst_bull_pct = (_sb + _b) / _tot if _tot >= 3 else None
+    analyst_bear_pct = (_s + _ss)  / _tot if _tot >= 3 else None
 
     def _apply_fundamental_check(sig):
-        """Penalise strength when signal direction conflicts with analyst consensus,
-        and append a conflict warning to the explanation."""
-        direction  = sig['direction']
-        strength   = sig['strength']
-        expl       = sig['explanation']
-        conflict   = False
-        conflict_note = ''
-
+        direction = sig['direction']; strength = sig['strength']; expl = sig['explanation']
+        conflict = False; note = ''
         if analyst_bull_pct is not None and direction == 'short' and analyst_bull_pct >= 0.60:
-            # Shorting into strong buy consensus — penalise
-            strength    = max(0.60, strength - 0.15)
-            conflict    = True
-            conflict_note = (f' ⚠️ Conflicts with analyst consensus ({int(analyst_bull_pct*100)}%'
-                             f' buy/{_tot} analysts) — technical SHORT vs fundamental BULLISH.')
+            strength = max(0.60, strength - 0.15); conflict = True
+            note = (f' ⚠️ Conflicts with analyst consensus ({int(analyst_bull_pct*100)}%'
+                    f' buy/{_tot} analysts) — technical SHORT vs fundamental BULLISH.')
         elif analyst_bear_pct is not None and direction == 'long' and analyst_bear_pct >= 0.50:
-            # Going long into strong sell consensus — penalise
-            strength    = max(0.60, strength - 0.10)
-            conflict    = True
-            conflict_note = (f' ⚠️ Analyst consensus is bearish ({int(analyst_bear_pct*100)}%'
-                             f' sell/{_tot} analysts) — treat this LONG signal with caution.')
-
-        sig['strength']     = round(strength, 4)
-        sig['explanation']  = expl + conflict_note
+            strength = max(0.60, strength - 0.10); conflict = True
+            note = (f' ⚠️ Analyst consensus is bearish ({int(analyst_bear_pct*100)}%'
+                    f' sell/{_tot} analysts) — treat this LONG signal with caution.')
+        sig['strength'] = round(strength, 4); sig['explanation'] = expl + note
         sig['analyst_conflict'] = conflict
         return sig
 
@@ -6779,212 +6880,216 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
     # ── 1. trend_pullback_long ────────────────────────────────────────────────
     near_ema21 = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
     if uptrend and near_ema21 and 42 <= r <= 62 and vr > 0.9 and weekly_bullish:
-        stop   = c - 1.8 * atr
-        target = c + 3.5 * (c - stop)
-        dist   = c - stop
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([near_ema21, 42 <= r <= 62, vr > 0.9, weekly_bullish, uptrend]) / 5
-        strength = 0.60 + 0.25 * quality
-        expl = (f'Pulled back to 21 EMA in uptrend. RSI {r:.0f} in bullish zone.'
-                f' Volume at {vr:.1f}x average.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'trend_pullback_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+        stop = c - 1.8 * atr; target = c + 3.5 * (c - stop); dist = c - stop
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.60 + 0.25 * (sum([near_ema21, 42 <= r <= 62, vr > 0.9, weekly_bullish, uptrend]) / 5)
+        expl = f'Pulled back to 21 EMA in uptrend. RSI {r:.0f} bullish zone. Vol {vr:.1f}x avg.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','trend_pullback_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 2. momentum_breakout_long ─────────────────────────────────────────────
-    breaks_high = c > recent_high20 and prev_low < recent_high20  # breakout candle
+    breaks_high = c > recent_high20 and prev_low < recent_high20
     if breaks_high and vr > 1.3 and 55 <= r <= 78 and adx > 20:
-        stop   = float(np.min(lows[-3:])) if len(lows) >= 3 else c - 1.5 * atr
-        target = c + 4.0 * (c - stop)
-        dist   = c - stop
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([vr > 1.3, vr > 1.5, adx > 25, 55 <= r <= 78]) / 4
-        strength = 0.62 + 0.28 * quality
-        expl = (f'Breaking 20-day high of {recent_high20:.2f} on {vr:.1f}x volume.'
-                f' ADX {adx:.0f} confirms momentum.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'momentum_breakout_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+        stop = float(np.min(lows[-3:])) if len(lows) >= 3 else c - 1.5 * atr
+        target = c + 4.0 * (c - stop); dist = c - stop
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.62 + 0.28 * (sum([vr > 1.3, vr > 1.5, adx > 25, 55 <= r <= 78]) / 4)
+        expl = f'Breaking 20-day high {recent_high20:.2f} on {vr:.1f}x volume. ADX {adx:.0f} momentum.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','momentum_breakout_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 3. liquidity_sweep_long ───────────────────────────────────────────────
-    swept_low = prev_low < recent_low20 and c > recent_low20  # swept below then closed back
+    swept_low = prev_low < recent_low20 and c > recent_low20
     disp_candle = (c - l) > 1.5 * atr
     if swept_low and disp_candle:
-        stop   = prev_low - 0.2 * atr
-        target = c + 4.0 * (c - stop)
-        dist   = c - stop
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([swept_low, disp_candle, r < 45, e50 > e200]) / 4
-        strength = 0.63 + 0.27 * quality
-        expl = (f'Liquidity sweep below {recent_low20:.2f} rejected with strong close.'
-                f' Displacement candle shows buyer absorption.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'liquidity_sweep_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+        stop = prev_low - 0.2 * atr; target = c + 4.0 * (c - stop); dist = c - stop
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.63 + 0.27 * (sum([swept_low, disp_candle, r < 45, e50 > e200]) / 4)
+        expl = f'Liquidity sweep below {recent_low20:.2f} rejected. Displacement candle shows buyer absorption.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','liquidity_sweep_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 4. mean_reversion_long ────────────────────────────────────────────────
     ranging = not uptrend and not downtrend and adx < 25
     at_lower_bb = bbl > 0 and c <= bbl * 1.005
     if ranging and at_lower_bb and stk < 15 and r < 32:
-        stop   = c - 1.5 * atr
-        target = c + 3.0 * (c - stop)
-        dist   = c - stop
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([at_lower_bb, stk < 15, r < 32, ranging]) / 4
-        strength = 0.60 + 0.25 * quality
-        expl = (f'Price at lower Bollinger Band in ranging market. RSI {r:.0f},'
-                f' Stochastic {stk:.0f} both oversold.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'long', 'mean_reversion_long',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+        stop = c - 1.5 * atr; target = c + 3.0 * (c - stop); dist = c - stop
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.60 + 0.25 * (sum([at_lower_bb, stk < 15, r < 32, ranging]) / 4)
+        expl = f'Price at lower Bollinger Band in ranging market. RSI {r:.0f}, Stochastic {stk:.0f} oversold.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'long','mean_reversion_long',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 5. trend_continuation_short ──────────────────────────────────────────
-    near_ema21_short = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
-    if downtrend and near_ema21_short and 38 <= r <= 58 and weekly_bearish:
-        stop   = c + 1.8 * atr
-        target = c - 3.5 * (stop - c)
-        dist   = stop - c
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([near_ema21_short, downtrend, 38 <= r <= 58, weekly_bearish]) / 4
-        strength = 0.60 + 0.25 * quality
-        expl = (f'Bearish trend continuation: bounce to 21 EMA rejected.'
-                f' RSI {r:.0f} in bearish zone, weekly trend down.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'short', 'trend_continuation_short',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+    near_ema21_s = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
+    if downtrend and near_ema21_s and 38 <= r <= 58 and weekly_bearish:
+        stop = c + 1.8 * atr; target = c - 3.5 * (stop - c); dist = stop - c
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.60 + 0.25 * (sum([near_ema21_s, downtrend, 38 <= r <= 58, weekly_bearish]) / 4)
+        expl = f'Bearish trend continuation: bounce to 21 EMA rejected. RSI {r:.0f} in bearish zone, weekly trend down.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'short','trend_continuation_short',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 6. liquidity_sweep_short ──────────────────────────────────────────────
     swept_high = prev_high > recent_high20 and c < recent_high20
-    disp_candle_short = (h - c) > 1.5 * atr
-    if swept_high and disp_candle_short:
-        stop   = prev_high + 0.2 * atr
-        target = c - 4.0 * (stop - c)
-        dist   = stop - c
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([swept_high, disp_candle_short, r > 55, e50 < e200]) / 4
-        strength = 0.63 + 0.27 * quality
-        expl = (f'Liquidity sweep above {recent_high20:.2f} rejected with strong sell candle.'
-                f' Sellers absorbed supply at highs.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'short', 'liquidity_sweep_short',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+    disp_candle_s = (h - c) > 1.5 * atr
+    if swept_high and disp_candle_s:
+        stop = prev_high + 0.2 * atr; target = c - 4.0 * (stop - c); dist = stop - c
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.63 + 0.27 * (sum([swept_high, disp_candle_s, r > 55, e50 < e200]) / 4)
+        expl = f'Liquidity sweep above {recent_high20:.2f} rejected. Sellers absorbed supply at highs.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'short','liquidity_sweep_short',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     # ── 7. momentum_breakdown_short ──────────────────────────────────────────
     breaks_low = c < recent_low20 and prev_high > recent_low20
     if breaks_low and vr > 1.3 and adx > 25 and 22 <= r <= 45:
-        stop   = float(np.max(highs[-3:])) if len(highs) >= 3 else c + 1.5 * atr
-        target = c - 4.0 * (stop - c)
-        dist   = stop - c
-        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
-        quality = sum([vr > 1.3, vr > 1.5, adx > 30, 22 <= r <= 45]) / 4
-        strength = 0.62 + 0.28 * quality
-        expl = (f'Breaking 20-day low of {recent_low20:.2f} on {vr:.1f}x volume.'
-                f' ADX {adx:.0f} — momentum accelerating.{score_str}')
-        sigs.append(_apply_fundamental_check(_make_signal(ticker, 'short', 'momentum_breakdown_short',
-                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl)))
+        stop = float(np.max(highs[-3:])) if len(highs) >= 3 else c + 1.5 * atr
+        target = c - 4.0 * (stop - c); dist = stop - c
+        sz = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        strength = 0.62 + 0.28 * (sum([vr > 1.3, vr > 1.5, adx > 30, 22 <= r <= 45]) / 4)
+        expl = f'Breaking 20-day low {recent_low20:.2f} on {vr:.1f}x volume. ADX {adx:.0f} — momentum accelerating.{score_str}'
+        sigs.append(_apply_fundamental_check(_make_signal(ticker,'short','momentum_breakdown_short',c,stop,target,sz,risk_amt,strength,engine,'daily',expl)))
 
     return sigs
 
 
-def compute_market_regime(data=None):
-    """Compute market regime from SPY (stocks) and BTC-USD (crypto).
-    Returns regime dict with label, adx, trend, spy_price, btc_price.
-    """
-    import numpy as np
-    try:
-        import yfinance as yf
-    except ImportError:
-        return {'label': 'unknown', 'adx': None, 'trend': None}
-
-    try:
-        spy = yf.download('SPY', period='6mo', interval='1d', progress=False, auto_adjust=True)
-        if spy is None or len(spy) < 55:
-            return {'label': 'unknown', 'adx': None, 'trend': None}
-        if hasattr(spy.columns, 'get_level_values'):
-            spy.columns = spy.columns.get_level_values(0)
-        closes = spy['Close'].values.astype(float).flatten()
-        highs  = spy['High'].values.astype(float).flatten()
-        lows   = spy['Low'].values.astype(float).flatten()
-
-        ema50  = _ema(closes, 50)
-        ema200 = _ema(closes, min(len(closes) - 1, 200))
-        adx14, pdm, ndm = _adx(highs, lows, closes, 14)
-
-        cur_e50  = float(ema50[-1])
-        cur_e200 = float(ema200[-1])
-        cur_adx  = float(adx14[-1])
-        cur_close = float(closes[-1])
-
-        if cur_e50 > cur_e200 and cur_adx > 25:
-            label = 'trending_up'
-        elif cur_e50 < cur_e200 and cur_adx > 25:
-            label = 'trending_down'
-        elif cur_adx > 35:
-            label = 'volatile'
-        else:
-            label = 'ranging'
-
-        return {
-            'label':     label,
-            'adx':       round(cur_adx, 1),
-            'trend':     'up' if cur_e50 > cur_e200 else 'down',
-            'spy_price': round(cur_close, 2),
-            'ema50':     round(cur_e50, 2),
-            'ema200':    round(cur_e200, 2),
-        }
-    except Exception as e:
-        print(f'[regime] {e}')
-        return {'label': 'unknown', 'adx': None, 'trend': None, 'error': str(e)}
+# ── Background scan state ─────────────────────────────────────────────────────
+_scan_state = {
+    'running':    False,
+    'started_at': None,
+    'done':       0,
+    'total':      0,
+    'last_ran':   None,
+    'error':      None,
+}
 
 
 def generate_trading_signals(data):
-    """Generate trading signals for all portfolio + watchlist tickers."""
-    tickers = set()
+    """Generate trading signals across the configured scan universe.
+
+    Universe priority:
+      1. Always include: portfolio holdings + watchlist + SI research_data tickers
+      2. Configured scan_universe: nasdaq100 / sp500 / ftse100 / crypto / global
+    Quality filters applied per ticker:
+      - Min avg 20-day volume ≥ 500k (configurable via config.min_volume)
+      - Min price ≥ £0.50 (configurable via config.min_price)
+    Returns top 10 signals by strength (max 5 long, 5 short).
+    """
+    import time
+
+    cfg      = data.get('signals_data', {}).get('config', {})
+    risk_pct = float(cfg.get('risk_per_trade', 0.015))
+    universe_key = cfg.get('scan_universe', 'global')
+
+    # 1. Always-included personal tickers
+    personal = set()
     for bucket, items in data.get('investments', {}).items():
         for h in items:
             t = h.get('ticker') or h.get('coin_id')
             if t:
-                tickers.add(str(t).upper())
+                personal.add(str(t).upper())
     for t in data.get('watchlist', []):
-        tickers.add(str(t).upper())
+        personal.add(str(t).upper())
     for t in data.get('research_data', {}).keys():
-        tickers.add(str(t).upper())
+        personal.add(str(t).upper())
 
-    # Remove empty/invalid
-    tickers = {t for t in tickers if t and len(t) >= 1}
+    # 2. Market universe
+    market_universe = []
+    if universe_key in ('portfolio_only', 'personal'):
+        market_universe = []   # personal tickers only — already captured above
+    else:
+        market_universe = SCAN_UNIVERSES.get(universe_key, SCAN_UNIVERSES['global'])
 
-    cfg      = data.get('signals_data', {}).get('config', {})
-    risk_pct = float(cfg.get('risk_per_trade', 0.015))
+    # Deduplicate, strip blanks
+    all_tickers = sorted({t for t in (personal | set(market_universe)) if t and len(t) >= 1})
 
+    _scan_state['total']   = len(all_tickers)
+    _scan_state['done']    = 0
+    _scan_state['running'] = True
+    _scan_state['started_at'] = datetime.utcnow().isoformat() + 'Z'
+    _scan_state['error']   = None
+
+    print(f'[signals] scanning {len(all_tickers)} tickers (universe={universe_key})')
+
+    # 3. Batch-fetch price data for the full universe
+    batch = _fetch_batch_universe(all_tickers)
+
+    # 4. Per-ticker signal generation
     signals = []
-    for ticker in sorted(tickers):
+    for ticker in all_tickers:
         try:
-            sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data)
+            hist = batch.get(ticker.upper())  # may be None if not in batch
+            sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=hist)
             signals.extend(sigs)
         except Exception as e:
             print(f'[signals] {ticker}: {e}')
+        _scan_state['done'] += 1
 
+    _scan_state['running']  = False
+    _scan_state['last_ran'] = datetime.utcnow().isoformat() + 'Z'
+
+    # Filter ≥60% strength
     signals = [s for s in signals if s.get('strength', 0) >= 0.60]
     signals.sort(key=lambda x: x.get('strength', 0), reverse=True)
-    return signals
+
+    # Top 10: best 5 longs + best 5 shorts
+    top_longs  = [s for s in signals if s['direction'] == 'long'][:5]
+    top_shorts = [s for s in signals if s['direction'] == 'short'][:5]
+    return top_longs + top_shorts
+
+
+def _run_background_scan():
+    """Run generate_trading_signals in a background thread and persist results."""
+    try:
+        data = load_data()
+        signals = generate_trading_signals(data)
+        data = load_data()  # reload in case of concurrent writes
+        sd = data.setdefault('signals_data', {})
+        sd['active_signals'] = signals
+        try:
+            sd['regime'] = compute_market_regime(data)
+        except Exception:
+            pass
+        save_data(data)
+        print(f'[signals] background scan complete: {len(signals)} signals')
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _scan_state['running'] = False
+        _scan_state['error']   = str(e)
 
 
 # ── Trading Signals: API Endpoints ────────────────────────────────────────────
 
 @app.route('/api/signals', methods=['GET'])
 def get_signals():
-    """Generate and return active trading signals."""
+    """Kick off a background scan (if not already running) and return cached results immediately."""
     data = load_data()
-    try:
-        signals = generate_trading_signals(data)
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        signals = []
-    # Persist generated signals
-    sd = data.setdefault('signals_data', {})
-    sd['active_signals'] = signals
-    # Also refresh regime
-    try:
-        regime = compute_market_regime(data)
-        sd['regime'] = regime
-    except Exception:
-        pass
-    save_data(data)
-    return jsonify({'signals': signals, 'regime': sd.get('regime', {})})
+    sd   = data.get('signals_data', {})
+    cached_signals = sd.get('active_signals', [])
+    regime         = sd.get('regime', {'label': 'unknown'})
+
+    # Start background scan if not already running
+    if not _scan_state['running']:
+        import threading as _threading
+        t = _threading.Thread(target=_run_background_scan, daemon=True)
+        t.start()
+
+    return jsonify({
+        'signals': cached_signals,
+        'regime':  regime,
+        'scan':    _scan_state,
+    })
+
+
+@app.route('/api/signals/scan-status', methods=['GET'])
+def get_scan_status():
+    """Return the current background scan state for frontend polling."""
+    # If scan just finished, also return fresh signals
+    if not _scan_state['running'] and _scan_state['last_ran']:
+        data   = load_data()
+        sd     = data.get('signals_data', {})
+        return jsonify({
+            'scan':    _scan_state,
+            'signals': sd.get('active_signals', []),
+            'regime':  sd.get('regime', {'label': 'unknown'}),
+        })
+    return jsonify({'scan': _scan_state})
 
 
 @app.route('/api/signals/regime', methods=['GET'])
@@ -7174,14 +7279,17 @@ def get_trade_history():
     return jsonify({'trades': trades, 'stats': stats})
 
 
-@app.route('/api/signals/config', methods=['POST'])
+@app.route('/api/signals/config', methods=['GET', 'POST'])
 def update_signals_config():
     data = load_data()
-    body = request.get_json(force=True, silent=True) or {}
     sd   = data.setdefault('signals_data', {})
     cfg  = sd.setdefault('config', {})
+    if request.method == 'GET':
+        return jsonify({'config': cfg})
+    body = request.get_json(force=True, silent=True) or {}
     # Only update known safe keys
-    for k in ('risk_per_trade', 'max_positions', 'max_drawdown', 'daily_loss_limit', 'mode'):
+    for k in ('risk_per_trade', 'max_positions', 'max_drawdown', 'daily_loss_limit', 'mode',
+              'scan_universe', 'min_price', 'min_volume'):
         if k in body:
             cfg[k] = body[k]
     if 'engines' in body and isinstance(body['engines'], dict):

@@ -1812,9 +1812,31 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div>
           <div style="font-family:var(--font-display);font-size:26px;font-weight:600">⚡ Trading Signals</div>
           <div style="color:var(--text3);font-size:13px;margin-top:3px">Technical entry/exit signals with position sizing</div>
-          <div style="color:var(--text3);font-size:11px;margin-top:5px;display:flex;align-items:center;gap:4px">
-            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Scans your portfolio, watchlist &amp; Stock Intelligence tickers only — add tickers to expand coverage
+          <!-- Universe selector chips -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px" id="sigs-universe-chips">
+            <span style="font-size:11px;color:var(--text3);align-self:center;margin-right:2px">Scan:</span>
+            <button onclick="sigsSetUniverse('personal')" id="sigs-u-personal" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">Portfolio</button>
+            <button onclick="sigsSetUniverse('nasdaq100')" id="sigs-u-nasdaq100" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">Nasdaq 100</button>
+            <button onclick="sigsSetUniverse('sp500')" id="sigs-u-sp500" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">S&amp;P 500</button>
+            <button onclick="sigsSetUniverse('ftse100')" id="sigs-u-ftse100" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">FTSE 100</button>
+            <button onclick="sigsSetUniverse('crypto')" id="sigs-u-crypto" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">Crypto</button>
+            <button onclick="sigsSetUniverse('global')" id="sigs-u-global" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">🌐 Global</button>
+          </div>
+          <!-- Scan progress bar (shown while scanning) -->
+          <div id="sigs-progress-wrap" style="display:none;margin-top:8px;max-width:360px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span id="sigs-progress-label" style="font-size:11px;color:var(--text3)">Scanning…</span>
+              <span id="sigs-progress-pct" style="font-size:11px;color:var(--text3)">0%</span>
+            </div>
+            <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden">
+              <div id="sigs-progress-bar" style="height:100%;width:0%;background:var(--gold);border-radius:2px;transition:width .3s"></div>
+            </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -9681,14 +9703,16 @@ async function siRefreshAll() {
 // ── Trading Signals ─────────────────────────────────────────────────────────
 
 const SIGNALS = {
-  signals:   [],
-  positions: [],
-  regime:    {},
-  stats:     null,
-  trades:    [],
-  mode:      'B',
-  scanning:  false,
-  _pnlChart: null,
+  signals:    [],
+  positions:  [],
+  regime:     {},
+  stats:      null,
+  trades:     [],
+  mode:       'B',
+  universe:   'global',
+  scanning:   false,
+  _pollTimer: null,
+  _pnlChart:  null,
   _monthChart: null,
 };
 
@@ -9719,39 +9743,155 @@ const REGIME_META = {
 };
 
 async function renderSignals() {
+  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+
+  // Load saved universe preference from config
+  try {
+    const rc = await fetch('/api/signals/config', {headers: hdrs});
+    if (rc.ok) {
+      const dc = await rc.json();
+      SIGNALS.universe = (dc.config || {}).scan_universe || 'global';
+    }
+  } catch(e) {}
+  sigsHighlightUniverseChip(SIGNALS.universe);
+
   await sigsLoadPositions();
   await sigsLoadHistory();
   sigsRenderPositions();
   sigsRenderHistory();
-  // Load cached regime
+
+  // Load cached signals & regime
   try {
-    const r = await fetch('/api/signals/regime', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
-    if (r.ok) { SIGNALS.regime = await r.json(); sigsRenderStatusCards(); }
+    const r = await fetch('/api/signals/scan-status', {headers: hdrs});
+    if (r.ok) {
+      const d = await r.json();
+      if (d.signals) SIGNALS.signals = d.signals;
+      if (d.regime)  SIGNALS.regime  = d.regime;
+      sigsRenderStatusCards();
+      sigsRenderSignalsList();
+      const st = d.scan || {};
+      if (st.last_ran) {
+        const el = document.getElementById('sigs-scan-time');
+        if (el) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
+      }
+    }
   } catch(e) {}
+}
+
+// ── Universe selector ────────────────────────────────────────────────────────
+
+function sigsHighlightUniverseChip(key) {
+  document.querySelectorAll('.sigs-u-chip').forEach(el => {
+    const isActive = el.id === 'sigs-u-' + key;
+    el.style.background = isActive ? 'var(--gold)' : 'var(--surface2)';
+    el.style.color       = isActive ? '#000'        : 'var(--text2)';
+    el.style.borderColor = isActive ? 'var(--gold)'  : 'var(--border)';
+    el.style.fontWeight  = isActive ? '600'           : '400';
+  });
+}
+
+async function sigsSetUniverse(key) {
+  SIGNALS.universe = key;
+  sigsHighlightUniverseChip(key);
+  // Persist to backend config
+  try {
+    await fetch('/api/signals/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+      body: JSON.stringify({scan_universe: key})
+    });
+  } catch(e) {}
+  // Kick off a fresh scan with the new universe
+  sigsRefresh();
+}
+
+// ── Progress polling ─────────────────────────────────────────────────────────
+
+function _sigsShowProgress(state) {
+  const wrap = document.getElementById('sigs-progress-wrap');
+  const bar  = document.getElementById('sigs-progress-bar');
+  const lbl  = document.getElementById('sigs-progress-label');
+  const pct  = document.getElementById('sigs-progress-pct');
+  if (!wrap) return;
+  const total = state.total || 0;
+  const done  = state.done  || 0;
+  const frac  = total > 0 ? Math.min(done / total, 1) : 0;
+  const pctVal = Math.round(frac * 100);
+  wrap.style.display = 'block';
+  if (bar) bar.style.width = pctVal + '%';
+  if (lbl) lbl.textContent = total > 0 ? `Scanning ${done}/${total} tickers…` : 'Starting scan…';
+  if (pct) pct.textContent = pctVal + '%';
+}
+
+function _sigsHideProgress() {
+  const wrap = document.getElementById('sigs-progress-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function _sigsBtnScanning() {
+  const btn = document.getElementById('sigs-refresh-btn');
+  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scanning…';
+}
+
+function _sigsBtnIdle() {
+  const btn = document.getElementById('sigs-refresh-btn');
+  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan';
+}
+
+async function _sigsPollUntilDone() {
+  // Poll /api/signals/scan-status every 3 s until running=false
+  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  while (true) {
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const resp = await fetch('/api/signals/scan-status', {headers: hdrs});
+      if (!resp.ok) break;
+      const d = await resp.json();
+      const st = d.scan || {};
+      _sigsShowProgress(st);
+      if (!st.running) {
+        // Scan finished — grab fresh signals
+        if (d.signals) SIGNALS.signals = d.signals;
+        if (d.regime)  SIGNALS.regime  = d.regime;
+        if (st.last_ran) {
+          const el = document.getElementById('sigs-scan-time');
+          if (el) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
+        }
+        break;
+      }
+    } catch(e) { break; }
+  }
 }
 
 async function sigsRefresh() {
   if (SIGNALS.scanning) return;
   SIGNALS.scanning = true;
-  const btn = document.getElementById('sigs-refresh-btn');
-  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scanning…';
+  _sigsBtnScanning();
+  _sigsShowProgress({done: 0, total: 0});
 
   try {
+    // Kick off background scan & get cached results immediately
     const r = await fetch('/api/signals', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
     if (!r.ok) throw new Error(await r.text());
     const d = await r.json();
-    SIGNALS.signals = d.signals || [];
-    SIGNALS.regime  = d.regime  || {};
-    const now = new Date();
-    const el = document.getElementById('sigs-scan-time');
-    if (el) el.textContent = `Last scan: ${now.toLocaleTimeString()}`;
+    // Show stale cached results while scan runs
+    if (d.signals) SIGNALS.signals = d.signals;
+    if (d.regime)  SIGNALS.regime  = d.regime;
+    sigsRenderSignalsList();
+    sigsRenderStatusCards();
+    // Poll for completion
+    if (d.scan && d.scan.running) {
+      _sigsShowProgress(d.scan);
+      await _sigsPollUntilDone();
+    }
   } catch(e) {
     toast('Signal scan failed: ' + e.message, 'error');
   }
 
   await sigsLoadPositions();
   SIGNALS.scanning = false;
-  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan';
+  _sigsBtnIdle();
+  _sigsHideProgress();
   sigsRenderAll();
 }
 
@@ -9822,7 +9962,7 @@ function sigsRenderSignalsList() {
   const el = document.getElementById('sigs-signals-list');
   if (!el) return;
   if (!SIGNALS.signals.length) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:40px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">No signals above 60% strength — try scanning again or add more tickers to your watchlist</div>';
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:40px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">No signals above 60% strength — click <b>Scan</b> to search across your selected universe</div>';
     return;
   }
   el.innerHTML = SIGNALS.signals.map(s => sigsRenderSignalCard(s)).join('');
