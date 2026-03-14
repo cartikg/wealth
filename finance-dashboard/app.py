@@ -6743,12 +6743,13 @@ def _fetch_one_ticker(sym):
 
 def _fetch_batch_universe(tickers):
     """Download 8 months of daily OHLCV for all tickers in parallel.
-    Uses ThreadPoolExecutor with individual single-ticker downloads to avoid
-    the fragile MultiIndex column-extraction logic of yfinance batch downloads.
+    Uses ThreadPoolExecutor with individual single-ticker downloads.
+    Hard-caps at 90 s total — prevents the scan hanging forever on Render
+    when Yahoo Finance connections stall without sending a TCP RST.
     Returns dict: ticker (upper) → DataFrame.
     """
     import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, wait as _cf_wait
 
     global _batch_hist_cache, _batch_hist_cache_ts
 
@@ -6758,18 +6759,37 @@ def _fetch_batch_universe(tickers):
         print(f'[signals] using cached data ({len(_batch_hist_cache)}/{len(tickers)} tickers)')
         return _batch_hist_cache
 
-    print(f'[signals] downloading {len(tickers)} tickers (10 parallel workers)…')
+    print(f'[signals] downloading {len(tickers)} tickers (5 workers, 90s cap)…')
     result = {}
 
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = {pool.submit(_fetch_one_ticker, t): t for t in tickers}
-        for fut in as_completed(futures):
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures_map  = {pool.submit(_fetch_one_ticker, t): t for t in tickers}
+        futures_list = list(futures_map.keys())
+
+        # Hard 90-second wall-clock cap: take whatever landed, drop the rest.
+        done_set, pending_set = _cf_wait(futures_list, timeout=90)
+
+        for fut in done_set:
             try:
-                sym, df = fut.result()
+                sym, df = fut.result(timeout=0)   # already completed
                 if df is not None:
                     result[sym] = df
             except Exception as e:
                 print(f'[signals] future error: {e}')
+
+        if pending_set:
+            pending_tickers = [futures_map[f] for f in pending_set]
+            print(f'[signals] TIMEOUT: {len(pending_set)} tickers did not finish in 90s: {pending_tickers}')
+            # Update pre-populated log entries so the UI shows timeout status
+            for sym in pending_tickers:
+                for entry in _scan_state.get('log', []):
+                    if entry.get('ticker', '').upper() == str(sym).upper() \
+                            and entry.get('status') == 'fetching':
+                        entry['status'] = 'timeout'
+                        entry['msg']    = 'Download timed out (90s cap)'
+                        break
+            for fut in pending_set:
+                fut.cancel()
 
     print(f'[signals] download complete: {len(result)}/{len(tickers)} tickers with data')
 
@@ -7047,43 +7067,48 @@ def generate_trading_signals(data):
     _scan_state['universe']   = universe_key
     _scan_state['batch_ok']   = False
     _scan_state['batch_got']  = 0
-    _scan_state['log']        = []   # reset log for fresh scan
+    # Pre-populate log with 'fetching' status before downloads start.
+    # This lets the frontend show all tickers as in-flight DURING the download phase
+    # rather than showing an empty log for the full ~90s download window.
+    _scan_state['log'] = [{'ticker': t, 'status': 'fetching', 'msg': 'Downloading…'} for t in all_tickers]
 
     print(f'[signals] scanning {len(all_tickers)} tickers (universe={universe_key})')
 
-    # 3. Fetch price data for the full universe (parallel individual downloads)
+    # 3. Fetch price data for the full universe (parallel, 90s hard cap)
     batch = _fetch_batch_universe(all_tickers)
 
     _scan_state['batch_ok']  = len(batch) > 0
     _scan_state['batch_got'] = len(batch)
     print(f'[signals] data: {len(batch)}/{len(all_tickers)} tickers downloaded')
 
-    # 4. Per-ticker signal generation with live logging
-    signals = []
+    # 4. Per-ticker signal generation — update pre-existing log entries in-place
+    signals  = []
+    log_map  = {e['ticker']: e for e in _scan_state['log']}
     for ticker in all_tickers:
-        entry = {'ticker': ticker, 'status': 'pending', 'msg': ''}
-        _scan_state['log'].append(entry)
+        entry = log_map.get(ticker, {'ticker': ticker, 'status': 'fetching', 'msg': ''})
         try:
-            hist = batch.get(ticker.upper())
-            if hist is None:
-                entry['status'] = 'no_data'
-                entry['msg']    = 'Download failed'
-            elif len(hist) < 55:
-                entry['status'] = 'no_data'
-                entry['msg']    = f'Only {len(hist)} bars (need 55+)'
-            else:
-                sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=hist)
-                strong = [s for s in sigs if s.get('strength', 0) >= 0.60]
-                signals.extend(strong)
-                if strong:
-                    entry['status'] = 'signal'
-                    entry['msg']    = ' | '.join(
-                        f"{s['signal_type']} {s['direction'].upper()} {int(s['strength']*100)}%"
-                        for s in strong
-                    )
+            # Tickers already marked 'timeout' by _fetch_batch_universe: skip, no data
+            if entry.get('status') != 'timeout':
+                hist = batch.get(ticker.upper())
+                if hist is None:
+                    entry['status'] = 'no_data'
+                    entry['msg']    = 'Download failed'
+                elif len(hist) < 55:
+                    entry['status'] = 'no_data'
+                    entry['msg']    = f'Only {len(hist)} bars (need 55+)'
                 else:
-                    entry['status'] = 'no_signal'
-                    entry['msg']    = f'{len(hist)} bars — conditions not met'
+                    sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=hist)
+                    strong = [s for s in sigs if s.get('strength', 0) >= 0.60]
+                    signals.extend(strong)
+                    if strong:
+                        entry['status'] = 'signal'
+                        entry['msg']    = ' | '.join(
+                            f"{s['signal_type']} {s['direction'].upper()} {int(s['strength']*100)}%"
+                            for s in strong
+                        )
+                    else:
+                        entry['status'] = 'no_signal'
+                        entry['msg']    = f'{len(hist)} bars — conditions not met'
         except Exception as e:
             entry['status'] = 'error'
             entry['msg']    = str(e)
@@ -7561,6 +7586,46 @@ def get_scan_status():
         'signals': sd.get('active_signals', []),
         'regime':  sd.get('regime', {'label': 'unknown'}),
     })
+
+
+@app.route('/api/signals/debug-fetch', methods=['GET'])
+def debug_signal_fetch():
+    """Diagnostic endpoint: tests whether yfinance can download data from this server.
+    Returns timing, row count, and any error for a single well-known ticker.
+    Query param: ticker (default AAPL)
+    """
+    import time as _time
+    import yfinance as yf
+    ticker = request.args.get('ticker', 'AAPL')
+    t0 = _time.time()
+    try:
+        df = yf.download(ticker, period='1mo', interval='1d',
+                         auto_adjust=True, progress=False, timeout=15)
+        elapsed = round(_time.time() - t0, 2)
+        ok = df is not None and len(df) > 0
+        cols = []
+        if df is not None:
+            if hasattr(df.columns, 'get_level_values'):
+                cols = list(df.columns.get_level_values(0))
+            else:
+                cols = list(df.columns)
+        return jsonify({
+            'ticker':    ticker,
+            'ok':        ok,
+            'elapsed_s': elapsed,
+            'rows':      int(len(df)) if df is not None else 0,
+            'columns':   cols,
+            'error':     None,
+        })
+    except Exception as e:
+        return jsonify({
+            'ticker':    ticker,
+            'ok':        False,
+            'elapsed_s': round(_time.time() - t0, 2),
+            'rows':      0,
+            'columns':   [],
+            'error':     str(e),
+        })
 
 
 @app.route('/api/signals/backtest', methods=['GET', 'POST'])
