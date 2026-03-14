@@ -7089,8 +7089,13 @@ def _run_background_scan():
     except Exception as e:
         import traceback
         traceback.print_exc()
+        _scan_state['error'] = str(e)
+    finally:
+        # Guarantee running is always cleared — even if an exception fires before
+        # generate_trading_signals gets a chance to clear it itself.
         _scan_state['running'] = False
-        _scan_state['error']   = str(e)
+        if not _scan_state.get('last_ran'):
+            _scan_state['last_ran'] = datetime.utcnow().isoformat() + 'Z'
 
 
 # ── Backtesting Engine ────────────────────────────────────────────────────────
@@ -7479,38 +7484,49 @@ def _run_backtest_thread(tickers):
 
 @app.route('/api/signals', methods=['GET'])
 def get_signals():
-    """Kick off a background scan (if not already running) and return cached results immediately."""
+    """Kick off a background scan (if not already running) and return cached results immediately.
+
+    BUG FIX: We set _scan_state['running'] = True BEFORE starting the thread.
+    Previously it was set inside generate_trading_signals(), which ran after the HTTP
+    response had already been sent — so the client always saw running=False and never
+    started polling.
+    """
     data = load_data()
     sd   = data.get('signals_data', {})
-    cached_signals = sd.get('active_signals', [])
-    regime         = sd.get('regime', {'label': 'unknown'})
 
-    # Start background scan if not already running
     if not _scan_state['running']:
+        # Mark running=True NOW so the response the client receives reflects reality
+        _scan_state['running']    = True
+        _scan_state['done']       = 0
+        _scan_state['total']      = 0
+        _scan_state['error']      = None
+        _scan_state['started_at'] = datetime.utcnow().isoformat() + 'Z'
         import threading as _threading
-        t = _threading.Thread(target=_run_background_scan, daemon=True)
-        t.start()
+        _threading.Thread(target=_run_background_scan, daemon=True).start()
 
     return jsonify({
-        'signals': cached_signals,
-        'regime':  regime,
+        'signals': sd.get('active_signals', []),
+        'regime':  sd.get('regime', {'label': 'unknown'}),
         'scan':    _scan_state,
     })
 
 
 @app.route('/api/signals/scan-status', methods=['GET'])
 def get_scan_status():
-    """Return the current background scan state for frontend polling."""
-    # If scan just finished, also return fresh signals
-    if not _scan_state['running'] and _scan_state['last_ran']:
-        data   = load_data()
-        sd     = data.get('signals_data', {})
-        return jsonify({
-            'scan':    _scan_state,
-            'signals': sd.get('active_signals', []),
-            'regime':  sd.get('regime', {'label': 'unknown'}),
-        })
-    return jsonify({'scan': _scan_state})
+    """Return the current background scan state AND the latest signals for frontend polling.
+
+    BUG FIX: Previously returned signals only when _scan_state['last_ran'] was set.
+    After every server restart last_ran resets to None, so cached signals from data.json
+    were never surfaced — the frontend showed 'No signals yet' even with fresh results.
+    Now always returns signals regardless of in-memory state.
+    """
+    data = load_data()
+    sd   = data.get('signals_data', {})
+    return jsonify({
+        'scan':    _scan_state,
+        'signals': sd.get('active_signals', []),
+        'regime':  sd.get('regime', {'label': 'unknown'}),
+    })
 
 
 @app.route('/api/signals/backtest', methods=['GET', 'POST'])

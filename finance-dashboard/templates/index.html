@@ -9923,30 +9923,50 @@ function _sigsBtnIdle() {
 }
 
 async function _sigsPollUntilDone() {
-  // Poll /api/signals/scan-status every 3 s until running=false
-  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
-  while (true) {
+  // Poll /api/signals/scan-status every 3 s until running=false.
+  // Fixes:
+  //   B3 — tolerate up to 5 consecutive network errors before giving up
+  //   B4 — hard 5-minute wall-clock timeout so we never loop forever if thread dies
+  const hdrs       = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  const TIMEOUT_MS = 5 * 60 * 1000;  // 5-min absolute ceiling
+  const MAX_FAILS  = 5;
+  const started    = Date.now();
+  let   failures   = 0;
+
+  while (Date.now() - started < TIMEOUT_MS) {
     await new Promise(r => setTimeout(r, 3000));
     try {
       const resp = await fetch('/api/signals/scan-status', {headers: hdrs});
-      if (!resp.ok) break;
-      const d = await resp.json();
+      if (!resp.ok) { failures++; if (failures >= MAX_FAILS) break; continue; }
+      failures = 0;  // reset counter on success
+
+      const d  = await resp.json();
       const st = d.scan || {};
-      _sigsShowProgress(st);
-      if (!st.running) {
-        // Scan finished — grab fresh signals and re-render
-        if (d.signals) SIGNALS.signals = d.signals;
-        if (d.regime)  SIGNALS.regime  = d.regime;
-        if (st.last_ran) {
-          const el = document.getElementById('sigs-scan-time');
-          if (el) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
-        }
+
+      // Update progress bar while scan is running
+      if (st.running && (st.total > 0 || st.done > 0)) _sigsShowProgress(st);
+
+      // scan-status now always returns signals — show partial results immediately
+      if (d.signals && d.signals.length > 0) {
+        SIGNALS.signals = d.signals;
         sigsRenderSignalsList();
         sigsRenderStatusCards();
-        _sigsShowProgress({done: 0, total: 0, running: false});
+      }
+      if (d.regime) SIGNALS.regime = d.regime;
+
+      if (!st.running) {
+        // Final definitive render
+        if (d.signals) SIGNALS.signals = d.signals;
+        const el = document.getElementById('sigs-scan-time');
+        if (el && st.last_ran) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
+        sigsRenderSignalsList();
+        sigsRenderStatusCards();
         break;
       }
-    } catch(e) { break; }
+    } catch(e) {
+      failures++;
+      if (failures >= MAX_FAILS) break;
+    }
   }
 }
 
@@ -9994,24 +10014,29 @@ async function sigsRefresh() {
   _sigsShowProgress({done: 0, total: 0});
 
   try {
-    // Kick off background scan & get cached results immediately
-    // _sigsFetch retries up to 2 times if server is sleeping
+    // Kick off background scan + get any already-cached signals immediately.
+    // _sigsFetch retries with countdown for Render free-tier cold starts.
     const r = await _sigsFetch('/api/signals');
     if (!r.ok) {
       const errText = await r.text().catch(() => r.statusText);
       throw new Error(errText || `HTTP ${r.status}`);
     }
     const d = await r.json();
-    // Show stale cached results while scan runs
+
+    // Render any already-cached signals while the fresh scan runs
     if (d.signals) SIGNALS.signals = d.signals;
     if (d.regime)  SIGNALS.regime  = d.regime;
     sigsRenderSignalsList();
     sigsRenderStatusCards();
-    // Poll for completion
-    if (d.scan && d.scan.running) {
-      _sigsShowProgress(d.scan);
-      await _sigsPollUntilDone();
-    }
+
+    // FIX B6: Always poll — don't gate on d.scan.running.
+    // Before the fix, running=True was set inside the background thread so the
+    // initial response always showed running=False, silently skipping polling.
+    // Now running=True is set before the thread starts (B1 fix), but we poll
+    // unconditionally here as an extra safety net.
+    _sigsShowProgress(d.scan || {});
+    await _sigsPollUntilDone();
+
   } catch(e) {
     const msg = e.message || String(e);
     const isNetwork = msg.includes('fetch') || msg.includes('network') || msg.includes('Failed');
