@@ -567,6 +567,10 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
       Stock Intelligence
     </div>
+    <div class="nav-item" onclick="nav('signals',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      Trading Signals
+    </div>
     <div class="nav-item" onclick="nav('mortgage',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0V15"/></svg>
       Mortgage & Debt
@@ -1800,6 +1804,110 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       </div>
     </div>
 
+    <!-- ── TRADING SIGNALS ──────────────────────────────────────────────── -->
+    <div id="section-signals" class="section">
+
+      <!-- Header bar -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+        <div>
+          <div style="font-family:var(--font-display);font-size:26px;font-weight:600">⚡ Trading Signals</div>
+          <div style="color:var(--text3);font-size:13px;margin-top:3px">Technical entry/exit signals with position sizing</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <!-- Mode toggle -->
+          <div style="display:flex;background:var(--surface2);border-radius:8px;padding:2px;gap:2px">
+            <button id="sig-mode-b" class="btn btn-sm" onclick="sigsSetMode('B')"
+              style="border-radius:6px;padding:5px 14px;font-size:12px;background:var(--gold);color:#000;border:none">B-Mode</button>
+            <button id="sig-mode-c" class="btn btn-sm" onclick="sigsSetMode('C')"
+              style="border-radius:6px;padding:5px 14px;font-size:12px;background:transparent;color:var(--text2);border:none">C-Mode</button>
+          </div>
+          <button class="btn btn-sm" onclick="sigsRefresh()" id="sigs-refresh-btn"
+            style="display:flex;gap:6px;align-items:center">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Scan
+          </button>
+        </div>
+      </div>
+
+      <!-- Status cards row -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px" id="sigs-status-cards">
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Market Regime</div>
+          <div id="sigs-regime-label" style="font-size:16px;font-weight:600;font-family:var(--font-display)">—</div>
+          <div id="sigs-regime-detail" style="font-size:11px;color:var(--text3);margin-top:3px">Loading…</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Open Positions</div>
+          <div id="sigs-open-count" style="font-size:16px;font-weight:600;font-family:var(--font-mono)">—</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px" id="sigs-open-sub">of 4 max</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Portfolio Heat</div>
+          <div id="sigs-heat" style="font-size:16px;font-weight:600;font-family:var(--font-mono)">—</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Max 10% risk</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Active Signals</div>
+          <div id="sigs-active-count" style="font-size:16px;font-weight:600;font-family:var(--font-mono)">—</div>
+          <div id="sigs-active-sub" style="font-size:11px;color:var(--text3);margin-top:3px">strength ≥ 60%</div>
+        </div>
+      </div>
+
+      <!-- Active signals list -->
+      <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+        <span>Active Signals</span>
+        <span id="sigs-scan-time" style="font-size:11px;font-weight:400;color:var(--text3);font-family:var(--font-body)"></span>
+      </div>
+      <div id="sigs-signals-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:40px">
+          Click <b>Scan</b> to generate signals
+        </div>
+      </div>
+
+      <!-- Open positions -->
+      <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px">Open Positions</div>
+      <div id="sigs-positions-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
+        <div style="color:var(--text3);font-size:13px;padding:16px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">No open positions</div>
+      </div>
+
+      <!-- C-mode additional panels -->
+      <div id="signals-c-mode" style="display:none">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px">Intraday Signals (1H)</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;text-align:center;color:var(--text3);margin-bottom:20px">
+          <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom:8px;opacity:.4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div style="font-size:13px">Intraday signals use 1H timeframe data — scanning on demand</div>
+          <button class="btn btn-sm" onclick="sigsRefreshIntraday()" style="margin-top:12px">Scan 1H Signals</button>
+        </div>
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px">Options Scanner</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;text-align:center;color:var(--text3);margin-bottom:28px">
+          <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom:8px;opacity:.4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <div style="font-size:13px">Options chain integration — coming soon</div>
+        </div>
+      </div>
+
+      <!-- Trade History / Performance (shown once ≥5 closed trades) -->
+      <div id="sigs-perf-section" style="display:none">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+          <span>Performance</span>
+          <button class="btn btn-sm" onclick="sigsTogglePerf()" id="sigs-perf-toggle">Hide</button>
+        </div>
+        <div id="sigs-perf-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px" id="sigs-perf-kpis"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px" id="sigs-perf-charts-row">
+            <div class="card" style="padding:16px">
+              <div style="font-size:12px;color:var(--text3);margin-bottom:10px;font-weight:600">P&L Over Time</div>
+              <canvas id="sigs-pnl-chart" height="160"></canvas>
+            </div>
+            <div class="card" style="padding:16px">
+              <div style="font-size:12px;color:var(--text3);margin-bottom:10px;font-weight:600">Monthly Breakdown</div>
+              <canvas id="sigs-monthly-chart" height="160"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <!-- ── MORTGAGE & DEBT ──────────────────────────────────────────────── -->
     <div id="section-mortgage" class="section">
 
@@ -3009,8 +3117,10 @@ const sectionTitles = {
   overview:'Overview', networth:'Net Worth', forecast:'12-Month Forecast', retirement:'Retirement Planner',
   transactions:'Transactions', accounts:'Accounts', investments:'Investments', mortgage:'Mortgage & Debt',
   receipts:'Receipts', tax:'Tax Strategy', estate:'Estate & Legacy',
-  ai:'AI Advisor', settings:'Settings', intelligence:'Stock Intelligence'
+  ai:'AI Advisor', settings:'Settings', intelligence:'Stock Intelligence',
+  signals:'Trading Signals'
 };
+
 function nav(id, el) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -3028,6 +3138,7 @@ function nav(id, el) {
   if (location.hash !== '#' + id) {
     history.replaceState(null, '', '#' + id);
   }
+  if (id === 'signals') renderSignals();
 }
 
 function restoreNav() {
@@ -9106,6 +9217,7 @@ function siRenderTable() {
     if (isOwned) badges.push(`<span style="font-size:9px;background:var(--gold-dim);color:var(--gold);border-radius:3px;padding:1px 5px">HELD</span>`);
     if (isWatched) badges.push(`<span style="font-size:9px;background:rgba(20,184,166,0.1);color:var(--teal);border-radius:3px;padding:1px 5px">WATCH</span>`);
     if (row.warnings && row.warnings.length > 0) badges.push(`<span style="font-size:9px;background:rgba(248,113,113,0.1);color:var(--rose);border-radius:3px;padding:1px 5px">⚠</span>`);
+    const sigBadge = typeof sigsGetBadgeForTicker === 'function' ? sigsGetBadgeForTicker(row.ticker) : '';
 
     const verdictBadge = row.verdict !== 'NO DATA'
       ? `<span style="background:${vs.bg};color:${vs.color};padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.5px">${row.verdict}</span>`
@@ -9113,8 +9225,8 @@ function siRenderTable() {
 
     return `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="siOpenPanel('${row.ticker}')" class="si-row">
       <td style="padding:10px 14px">
-        <div style="font-weight:700;font-size:13px">${row.ticker}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:1px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.name||''}</div>
+        <div style="font-weight:700;font-size:13px">${row.ticker}${sigBadge}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.name||''}</div>
         <div style="display:flex;gap:3px;margin-top:3px">${badges.join('')}</div>
       </td>
       <td style="padding:10px 14px">${scoreBar}</td>
@@ -9423,6 +9535,37 @@ async function siOpenPanel(ticker) {
 
       ${holdingHtml}
 
+      ${(()=>{
+        // Inject active trading signal if one exists
+        const activeSig = SIGNALS && SIGNALS.signals && SIGNALS.signals.find(s => s.ticker.toUpperCase() === ticker.toUpperCase());
+        if (!activeSig) return '';
+        const isLong = activeSig.direction === 'long';
+        const bc = isLong ? 'var(--teal)' : 'var(--rose)';
+        const typeLabel = SIG_TYPE_LABELS[activeSig.signal_type] || activeSig.signal_type;
+        const rr = activeSig.entry_price > 0 && activeSig.stop_loss > 0
+          ? Math.abs((activeSig.target - activeSig.entry_price) / (activeSig.entry_price - activeSig.stop_loss)).toFixed(1)
+          : '—';
+        return `
+          <div style="margin-bottom:14px;border:1px solid ${bc};border-left:3px solid ${bc};border-radius:0 8px 8px 0;padding:12px;background:var(--surface2)">
+            <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">ACTIVE TRADING SIGNAL ⚡</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="color:${bc};font-weight:700;font-size:12px">${activeSig.direction.toUpperCase()}</span>
+                <span style="color:var(--text3);font-size:11px">${typeLabel}</span>
+              </div>
+              <span style="font-size:12px;font-weight:600;color:${sigsStrengthColor(activeSig.strength)}">${Math.round(activeSig.strength*100)}% strength</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:11px;margin-bottom:8px">
+              <div><div style="color:var(--text3)">Entry</div><div style="font-weight:600;font-family:var(--font-mono)">${activeSig.entry_price.toLocaleString(undefined,{maximumFractionDigits:4})}</div></div>
+              <div><div style="color:var(--rose)">Stop</div><div style="font-weight:600;font-family:var(--font-mono)">${activeSig.stop_loss.toLocaleString(undefined,{maximumFractionDigits:4})}</div></div>
+              <div><div style="color:var(--teal)">Target</div><div style="font-weight:600;font-family:var(--font-mono)">${activeSig.target.toLocaleString(undefined,{maximumFractionDigits:4})}</div></div>
+              <div><div style="color:var(--text3)">R:R</div><div style="font-weight:600;font-family:var(--font-mono)">${rr}R</div></div>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${activeSig.explanation||''}</div>
+            <button class="btn btn-gold btn-sm" onclick="sigsTakeTrade('${activeSig.id}')" style="font-size:11px">Take Trade</button>
+          </div>`;
+      })()}
+
       ${cagrHtml}
 
       <!-- Analyst Consensus -->
@@ -9529,6 +9672,538 @@ async function siRefreshAll() {
   }
   toast('Refresh complete');
   renderIntelligence();
+}
+
+// ── Trading Signals ─────────────────────────────────────────────────────────
+
+const SIGNALS = {
+  signals:   [],
+  positions: [],
+  regime:    {},
+  stats:     null,
+  trades:    [],
+  mode:      'B',
+  scanning:  false,
+  _pnlChart: null,
+  _monthChart: null,
+};
+
+const SIG_TYPE_LABELS = {
+  trend_pullback_long:      'Trend Pullback',
+  momentum_breakout_long:   'Momentum Breakout',
+  liquidity_sweep_long:     'Liquidity Sweep',
+  mean_reversion_long:      'Mean Reversion',
+  trend_continuation_short: 'Trend Continuation',
+  liquidity_sweep_short:    'Liquidity Sweep',
+  momentum_breakdown_short: 'Momentum Breakdown',
+};
+
+const ENGINE_LABELS = {
+  crypto_spot:  'Crypto Spot',
+  crypto_perps: 'Crypto Perps',
+  stock_cfds:   'Stock CFDs',
+  options:      'Options',
+  cash:         'Cash',
+};
+
+const REGIME_META = {
+  trending_up:   { label: 'Trending Up',   color: 'var(--teal)' },
+  trending_down: { label: 'Trending Down',  color: 'var(--rose)' },
+  ranging:       { label: 'Ranging',        color: 'var(--gold)' },
+  volatile:      { label: 'Volatile',       color: 'var(--rose)' },
+  unknown:       { label: 'Unknown',        color: 'var(--text3)' },
+};
+
+async function renderSignals() {
+  await sigsLoadPositions();
+  await sigsLoadHistory();
+  sigsRenderPositions();
+  sigsRenderHistory();
+  // Load cached regime
+  try {
+    const r = await fetch('/api/signals/regime', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
+    if (r.ok) { SIGNALS.regime = await r.json(); sigsRenderStatusCards(); }
+  } catch(e) {}
+}
+
+async function sigsRefresh() {
+  if (SIGNALS.scanning) return;
+  SIGNALS.scanning = true;
+  const btn = document.getElementById('sigs-refresh-btn');
+  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scanning…';
+
+  try {
+    const r = await fetch('/api/signals', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    SIGNALS.signals = d.signals || [];
+    SIGNALS.regime  = d.regime  || {};
+    const now = new Date();
+    const el = document.getElementById('sigs-scan-time');
+    if (el) el.textContent = `Last scan: ${now.toLocaleTimeString()}`;
+  } catch(e) {
+    toast('Signal scan failed: ' + e.message, 'error');
+  }
+
+  await sigsLoadPositions();
+  SIGNALS.scanning = false;
+  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan';
+  sigsRenderAll();
+}
+
+async function sigsLoadPositions() {
+  try {
+    const r = await fetch('/api/signals/positions', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
+    if (r.ok) { const d = await r.json(); SIGNALS.positions = d.positions || []; }
+  } catch(e) {}
+}
+
+async function sigsLoadHistory() {
+  try {
+    const r = await fetch('/api/signals/history', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
+    if (r.ok) { const d = await r.json(); SIGNALS.trades = d.trades || []; SIGNALS.stats = d.stats; }
+  } catch(e) {}
+}
+
+function sigsRenderAll() {
+  sigsRenderStatusCards();
+  sigsRenderSignalsList();
+  sigsRenderPositions();
+  sigsRenderHistory();
+}
+
+function sigsRenderStatusCards() {
+  const rm = REGIME_META[SIGNALS.regime.label] || REGIME_META.unknown;
+  const regEl = document.getElementById('sigs-regime-label');
+  if (regEl) {
+    regEl.textContent = rm.label;
+    regEl.style.color = rm.color;
+  }
+  const regDet = document.getElementById('sigs-regime-detail');
+  if (regDet) {
+    const adx = SIGNALS.regime.adx;
+    const spy = SIGNALS.regime.spy_price;
+    regDet.textContent = adx ? `ADX ${adx} · SPY $${spy||'—'}` : 'SPY proxy';
+  }
+
+  const pos = SIGNALS.positions.length;
+  const el2 = document.getElementById('sigs-open-count');
+  if (el2) el2.textContent = pos;
+
+  // Portfolio heat
+  const totalCap = 7500 + 3750 + 6250 + 5000 + 2500; // default capitals
+  const totalRisk = SIGNALS.positions.reduce((s,p) => s + (parseFloat(p.risk_amount)||0), 0);
+  const heat = totalCap > 0 ? totalRisk / totalCap * 100 : 0;
+  const hEl = document.getElementById('sigs-heat');
+  if (hEl) {
+    hEl.textContent = heat.toFixed(1) + '%';
+    hEl.style.color = heat > 8 ? 'var(--rose)' : heat > 6 ? 'var(--gold)' : 'var(--teal)';
+  }
+
+  const longs  = SIGNALS.signals.filter(s => s.direction === 'long').length;
+  const shorts = SIGNALS.signals.filter(s => s.direction === 'short').length;
+  const acEl = document.getElementById('sigs-active-count');
+  if (acEl) acEl.textContent = SIGNALS.signals.length;
+  const asSub = document.getElementById('sigs-active-sub');
+  if (asSub && SIGNALS.signals.length > 0) asSub.textContent = `${longs} long · ${shorts} short`;
+}
+
+function sigsStrengthColor(s) {
+  if (s >= 0.75) return 'var(--teal)';
+  if (s >= 0.60) return 'var(--gold)';
+  return 'var(--text3)';
+}
+
+function sigsRenderSignalsList() {
+  const el = document.getElementById('sigs-signals-list');
+  if (!el) return;
+  if (!SIGNALS.signals.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:40px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">No signals above 60% strength — try scanning again or add more tickers to your watchlist</div>';
+    return;
+  }
+  el.innerHTML = SIGNALS.signals.map(s => sigsRenderSignalCard(s)).join('');
+}
+
+function sigsRenderSignalCard(s) {
+  const isLong    = s.direction === 'long';
+  const bColor    = isLong ? 'var(--teal)' : 'var(--rose)';
+  const badgeBg   = isLong ? 'rgba(20,184,166,.18)' : 'rgba(251,113,133,.18)';
+  const badgeClr  = isLong ? 'var(--teal)' : 'var(--rose)';
+  const pct       = Math.round(s.strength * 100);
+  const typeLabel = SIG_TYPE_LABELS[s.signal_type] || s.signal_type;
+  const engLabel  = ENGINE_LABELS[s.engine] || s.engine;
+
+  const rr = s.entry_price > 0 && s.stop_loss > 0
+    ? Math.abs((s.target - s.entry_price) / (s.entry_price - s.stop_loss)).toFixed(1)
+    : '—';
+
+  // Check if research exists in SI
+  const siHasData = window.SI && window.SI.research && window.SI.research[s.ticker];
+
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:16px 18px;position:relative">
+    <!-- Header row -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:17px;font-weight:700;font-family:var(--font-display)">${s.ticker}</span>
+        <span style="background:${badgeBg};color:${badgeClr};padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:.05em">${s.direction.toUpperCase()}</span>
+        <span style="background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:8px;font-size:11px">${typeLabel}</span>
+        <span style="background:var(--surface2);color:var(--text3);padding:2px 8px;border-radius:8px;font-size:11px">${engLabel}</span>
+      </div>
+      <!-- Strength bar -->
+      <div style="display:flex;align-items:center;gap:8px;min-width:140px">
+        <div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${sigsStrengthColor(s.strength)};border-radius:3px"></div>
+        </div>
+        <span style="font-size:12px;font-weight:700;color:${sigsStrengthColor(s.strength)};font-family:var(--font-mono);min-width:32px">${pct}%</span>
+      </div>
+    </div>
+    <!-- 5-column data grid -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;background:var(--surface2);border-radius:8px;padding:10px 12px">
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Entry</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono)">${s.entry_price.toLocaleString(undefined,{maximumFractionDigits:4})}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--rose);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Stop</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:var(--rose)">${s.stop_loss.toLocaleString(undefined,{maximumFractionDigits:4})}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--teal);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Target</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:var(--teal)">${s.target.toLocaleString(undefined,{maximumFractionDigits:4})}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Size</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono)">${typeof s.position_size === 'number' ? s.position_size.toFixed(4) : s.position_size}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Risk · R:R</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono)">£${(s.risk_amount||0).toFixed(0)} · ${rr}R</div>
+      </div>
+    </div>
+    <!-- Explanation -->
+    <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">${s.explanation || ''}</div>
+    <!-- Action buttons -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" onclick="sigsTakeTrade('${s.id}')">Take Trade</button>
+      <button class="btn btn-sm" onclick="nav('intelligence',document.querySelector('.nav-item[onclick*=intelligence]'));setTimeout(()=>siOpenPanel('${s.ticker}'),350)"
+        style="display:flex;gap:5px;align-items:center">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        View Research
+      </button>
+      <button class="btn btn-sm" onclick="sigsPlaceOrder('${s.id}')" title="Execute via Trading 212"
+        style="display:flex;gap:5px;align-items:center">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        Execute T212
+      </button>
+    </div>
+  </div>`;
+}
+
+function sigsRenderPositions() {
+  const el = document.getElementById('sigs-positions-list');
+  if (!el) return;
+  if (!SIGNALS.positions.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:16px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">No open positions</div>';
+    return;
+  }
+  el.innerHTML = SIGNALS.positions.map(p => {
+    const isLong = p.direction === 'long';
+    const bColor = isLong ? 'var(--teal)' : 'var(--rose)';
+    const cur    = parseFloat(p.current_price) || parseFloat(p.entry_price);
+    const entry  = parseFloat(p.entry_price) || 0;
+    const size   = parseFloat(p.size) || 0;
+    const pnl    = isLong ? (cur - entry) * size : (entry - cur) * size;
+    const origStop = parseFloat(p.original_stop || p.current_stop || entry);
+    const stopDist = Math.abs(entry - origStop) || entry * 0.02;
+    const rMult  = stopDist > 0 ? (isLong ? (cur - entry) : (entry - cur)) / stopDist : 0;
+    const pnlClr = pnl >= 0 ? 'var(--teal)' : 'var(--rose)';
+    const typeLabel = SIG_TYPE_LABELS[p.signal_type] || p.signal_type || '';
+
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:15px;font-weight:700;font-family:var(--font-display)">${p.ticker}</span>
+          <span style="font-size:11px;color:${bColor};font-weight:700">${p.direction.toUpperCase()}</span>
+          <span style="font-size:11px;color:var(--text3)">${typeLabel}</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:${pnlClr}">
+            ${pnl >= 0 ? '+' : ''}£${Math.abs(pnl).toFixed(2)} (${rMult.toFixed(2)}R)
+          </span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;font-size:12px;background:var(--surface2);border-radius:7px;padding:8px 12px;margin-bottom:10px">
+        <div><span style="color:var(--text3)">Entry </span><span style="font-family:var(--font-mono)">${entry.toLocaleString(undefined,{maximumFractionDigits:4})}</span></div>
+        <div><span style="color:var(--text3)">Stop </span><span style="font-family:var(--font-mono);color:var(--rose)">${parseFloat(p.current_stop).toLocaleString(undefined,{maximumFractionDigits:4})}</span></div>
+        <div><span style="color:var(--text3)">Target </span><span style="font-family:var(--font-mono);color:var(--teal)">${parseFloat(p.target).toLocaleString(undefined,{maximumFractionDigits:4})}</span></div>
+        <div><span style="color:var(--text3)">Date </span><span style="font-family:var(--font-mono)">${p.entry_date||'—'}</span></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="sigsShowCloseModal('${p.id}','${p.ticker}')">Close Position</button>
+        <button class="btn btn-sm" onclick="sigsShowStopModal('${p.id}',${parseFloat(p.current_stop)})">Update Stop</button>
+        <button class="btn btn-sm" onclick="sigsPlaceCloseOrder('${p.id}')" title="Close via T212">
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Close via T212
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function sigsTakeTrade(sigId) {
+  const sig = SIGNALS.signals.find(s => s.id === sigId);
+  if (!sig) return;
+  if (!confirm(`Take ${sig.direction.toUpperCase()} trade on ${sig.ticker}?\nEntry: ${sig.entry_price}  Stop: ${sig.stop_loss}  Target: ${sig.target}\nRisk: £${(sig.risk_amount||0).toFixed(2)}`)) return;
+
+  try {
+    const r = await fetch(`/api/signals/take/${sigId}`, {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
+    SIGNALS.signals = SIGNALS.signals.filter(s => s.id !== sigId);
+    SIGNALS.positions.push(d.position);
+    toast(`Position opened: ${sig.direction.toUpperCase()} ${sig.ticker} @ ${sig.entry_price}`);
+    sigsRenderAll();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function sigsShowCloseModal(posId, ticker) {
+  const pos = SIGNALS.positions.find(p => p.id === posId);
+  const cur  = pos?.current_price || pos?.entry_price || '';
+  const exitP = prompt(`Close position: ${ticker}\nEnter exit price:`, cur);
+  if (!exitP || isNaN(parseFloat(exitP))) return;
+  sigsClosePosition(posId, parseFloat(exitP));
+}
+
+async function sigsClosePosition(posId, exitPrice) {
+  try {
+    const r = await fetch(`/api/signals/close/${posId}`, {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({exit_price: exitPrice}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
+    const trade = d.trade;
+    const pnl   = trade.pnl || 0;
+    const rMult = d.r_multiple || 0;
+    SIGNALS.positions = SIGNALS.positions.filter(p => p.id !== posId);
+    SIGNALS.trades.push(trade);
+    toast(`Closed ${trade.ticker}: ${pnl >= 0 ? '+' : ''}£${Math.abs(pnl).toFixed(2)} (${rMult.toFixed(2)}R)`, pnl >= 0 ? 'success' : 'error');
+    await sigsLoadHistory();
+    sigsRenderAll();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function sigsShowStopModal(posId, currentStop) {
+  const newStop = prompt(`New stop loss price:`, currentStop);
+  if (!newStop || isNaN(parseFloat(newStop))) return;
+  sigsUpdateStop(posId, parseFloat(newStop));
+}
+
+async function sigsUpdateStop(posId, newStop) {
+  try {
+    const r = await fetch(`/api/signals/update-stop/${posId}`, {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({stop: newStop}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
+    const p = SIGNALS.positions.find(x => x.id === posId);
+    if (p) p.current_stop = newStop;
+    toast(`Stop updated to ${newStop}`);
+    sigsRenderPositions();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function sigsPlaceOrder(sigId) {
+  const sig = SIGNALS.signals.find(s => s.id === sigId);
+  if (!sig) return;
+  const confirmed = confirm(
+    `Execute ${sig.direction.toUpperCase()} order on T212?\n` +
+    `Ticker: ${sig.ticker}\nQty: ${(sig.position_size||0).toFixed(4)}\nEntry: ${sig.entry_price}\n\n` +
+    `⚠️ This places a real order. Continue?`
+  );
+  if (!confirmed) return;
+  try {
+    const r = await fetch('/api/signals/place-order', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({
+        ticker: sig.ticker,
+        direction: sig.direction,
+        order_type: 'limit',
+        quantity: sig.position_size,
+        limit_price: sig.entry_price,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('T212 order failed: ' + (d.error||'Unknown error'), 'error'); return; }
+    toast(`Order placed on T212: ${sig.direction.toUpperCase()} ${sig.ticker} (T212: ${d.t212_ticker})`);
+    // Also log locally
+    await sigsTakeTrade(sigId);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function sigsPlaceCloseOrder(posId) {
+  const pos = SIGNALS.positions.find(p => p.id === posId);
+  if (!pos) return;
+  const cur = pos.current_price || pos.entry_price;
+  const confirmed = confirm(
+    `Close position on T212?\nTicker: ${pos.ticker}\nApprox price: ${cur}\n\n⚠️ Places real order. Continue?`
+  );
+  if (!confirmed) return;
+  try {
+    const r = await fetch('/api/signals/place-order', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({
+        ticker: pos.ticker,
+        direction: pos.direction === 'long' ? 'short' : 'long', // reverse to close
+        order_type: 'market',
+        quantity: pos.size,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('T212 close failed: ' + (d.error||'Unknown'), 'error'); return; }
+    toast(`Close order placed on T212 for ${pos.ticker}`);
+    // Also close locally
+    const exitP = parseFloat(cur) || parseFloat(pos.entry_price);
+    await sigsClosePosition(posId, exitP);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function sigsSetMode(m) {
+  SIGNALS.mode = m;
+  document.getElementById('sig-mode-b').style.background = m === 'B' ? 'var(--gold)' : 'transparent';
+  document.getElementById('sig-mode-b').style.color      = m === 'B' ? '#000' : 'var(--text2)';
+  document.getElementById('sig-mode-c').style.background = m === 'C' ? 'var(--gold)' : 'transparent';
+  document.getElementById('sig-mode-c').style.color      = m === 'C' ? '#000' : 'var(--text2)';
+  const cPanel = document.getElementById('signals-c-mode');
+  if (cPanel) cPanel.style.display = m === 'C' ? '' : 'none';
+  // Persist mode
+  fetch('/api/signals/config', {
+    method:'POST',
+    headers:{Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'),'Content-Type':'application/json'},
+    body: JSON.stringify({mode: m}),
+  }).catch(()=>{});
+}
+
+async function sigsRefreshIntraday() {
+  toast('Intraday signal scan is not yet available in this build', 'info');
+}
+
+function sigsRenderHistory() {
+  const stats  = SIGNALS.stats;
+  const trades = SIGNALS.trades;
+  const section = document.getElementById('sigs-perf-section');
+  if (!section) return;
+
+  if (!stats || trades.length < 5) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+
+  // KPI cards
+  const kpiEl = document.getElementById('sigs-perf-kpis');
+  if (kpiEl) {
+    const fmt = (v, suffix='') => v != null ? v + suffix : '—';
+    const kpis = [
+      {label:'Total Trades',  val: stats.total_trades,                    clr:'var(--text)'},
+      {label:'Win Rate',      val: Math.round((stats.win_rate||0)*100)+'%', clr:'var(--teal)'},
+      {label:'Avg R-Multiple',val: fmt(stats.avg_r,'R'),                   clr: stats.avg_r >= 0 ? 'var(--teal)' : 'var(--rose)'},
+      {label:'Profit Factor', val: stats.profit_factor ? stats.profit_factor.toFixed(2) : '—', clr:'var(--gold)'},
+      {label:'Total P&L',     val: '£' + Math.abs(stats.total_pnl||0).toFixed(2),
+                                                                           clr: (stats.total_pnl||0) >= 0 ? 'var(--teal)' : 'var(--rose)'},
+      {label:'Streak',        val: `${stats.streak} ${stats.streak_type||''}`, clr:'var(--text2)'},
+    ];
+    kpiEl.innerHTML = kpis.map(k => `
+      <div class="card" style="padding:12px 14px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">${k.label}</div>
+        <div style="font-size:15px;font-weight:700;font-family:var(--font-mono);color:${k.clr}">${k.val}</div>
+      </div>`).join('');
+  }
+
+  // P&L cumulative chart
+  const cumPnl = [];
+  let running = 0;
+  const labels = [];
+  trades.forEach((t, i) => {
+    running += (t.pnl || 0);
+    cumPnl.push(parseFloat(running.toFixed(2)));
+    labels.push(t.exit_date ? t.exit_date.slice(5) : `#${i+1}`);
+  });
+
+  const pnlCanvas = document.getElementById('sigs-pnl-chart');
+  if (pnlCanvas) {
+    if (SIGNALS._pnlChart) { SIGNALS._pnlChart.destroy(); SIGNALS._pnlChart = null; }
+    SIGNALS._pnlChart = mkChart('sigs-pnl-chart', 'line', {
+      labels,
+      datasets: [{
+        data: cumPnl,
+        borderColor: cumPnl[cumPnl.length-1] >= 0 ? 'rgb(20,184,166)' : 'rgb(251,113,133)',
+        backgroundColor: cumPnl[cumPnl.length-1] >= 0 ? 'rgba(20,184,166,.1)' : 'rgba(251,113,133,.1)',
+        fill: true, tension: 0.3, pointRadius: 2,
+      }]
+    }, {
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#888',font:{size:9}},grid:{color:'#2a2a2a'}},
+        y:{ticks:{color:'#888',font:{size:9},callback:v=>'£'+v},grid:{color:'#2a2a2a'}},
+      }
+    });
+  }
+
+  // Monthly bar chart
+  const monthly = stats.monthly_pnl || {};
+  const months  = Object.keys(monthly).sort();
+  const mVals   = months.map(m => monthly[m]);
+  const monthCanvas = document.getElementById('sigs-monthly-chart');
+  if (monthCanvas) {
+    if (SIGNALS._monthChart) { SIGNALS._monthChart.destroy(); SIGNALS._monthChart = null; }
+    SIGNALS._monthChart = mkChart('sigs-monthly-chart', 'bar', {
+      labels: months.map(m => m.slice(2)),
+      datasets: [{
+        data: mVals,
+        backgroundColor: mVals.map(v => v >= 0 ? 'rgba(20,184,166,.7)' : 'rgba(251,113,133,.7)'),
+        borderRadius: 4,
+      }]
+    }, {
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#888',font:{size:9}},grid:{display:false}},
+        y:{ticks:{color:'#888',font:{size:9},callback:v=>'£'+v},grid:{color:'#2a2a2a'}},
+      }
+    });
+  }
+}
+
+function sigsTogglePerf() {
+  const body = document.getElementById('sigs-perf-body');
+  const btn  = document.getElementById('sigs-perf-toggle');
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  if (btn) btn.textContent = hidden ? 'Hide' : 'Show';
+}
+
+// ── Cross-reference: signal badges in SI table ───────────────────────────────
+// This function is called from renderIntelligence() to add ⚡ badges
+function sigsGetBadgeForTicker(ticker) {
+  if (!SIGNALS.signals || !SIGNALS.signals.length) return '';
+  const sig = SIGNALS.signals.find(s => s.ticker.toUpperCase() === ticker.toUpperCase());
+  if (!sig) return '';
+  const bColor = sig.direction === 'long' ? 'var(--teal)' : 'var(--rose)';
+  return `<span title="${sig.direction.toUpperCase()} signal: ${SIG_TYPE_LABELS[sig.signal_type]||sig.signal_type} (${Math.round(sig.strength*100)}%)"
+    onclick="nav('signals',document.querySelector('.nav-item[onclick*=signals]'))"
+    style="cursor:pointer;display:inline-flex;align-items:center;margin-left:6px;background:rgba(0,0,0,.3);
+           border:1px solid ${bColor};border-radius:10px;padding:1px 6px;font-size:10px;color:${bColor}">
+    ⚡ ${sig.direction === 'long' ? 'L' : 'S'}
+  </span>`;
 }
 
 </script>

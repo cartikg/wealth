@@ -239,6 +239,49 @@ def migrate_data(data):
     if 'watchlist' not in data:
         data['watchlist'] = []
 
+    # Trading Signals: signals_data store
+    if 'signals_data' not in data:
+        data['signals_data'] = {
+            'config': {
+                'risk_per_trade': 0.015,
+                'max_positions': 4,
+                'max_drawdown': 0.20,
+                'daily_loss_limit': 0.03,
+                'engines': {
+                    'crypto_spot':  {'capital': 7500,  'leverage': 1},
+                    'crypto_perps': {'capital': 3750,  'leverage': 3},
+                    'stock_cfds':   {'capital': 6250,  'leverage': 2},
+                    'options':      {'capital': 5000,  'leverage': 5},
+                    'cash':         {'capital': 2500,  'leverage': 1},
+                },
+                'mode': 'B',
+            },
+            'active_signals': [],
+            'open_positions': [],
+            'closed_trades':  [],
+            'regime': {'label': 'unknown', 'adx': None, 'trend': None},
+        }
+    else:
+        sd = data['signals_data']
+        for k, v in [('active_signals', []), ('open_positions', []), ('closed_trades', []),
+                     ('regime', {'label': 'unknown', 'adx': None, 'trend': None})]:
+            sd.setdefault(k, v)
+        cfg = sd.setdefault('config', {})
+        cfg.setdefault('risk_per_trade', 0.015)
+        cfg.setdefault('max_positions', 4)
+        cfg.setdefault('max_drawdown', 0.20)
+        cfg.setdefault('daily_loss_limit', 0.03)
+        cfg.setdefault('mode', 'B')
+        eng = cfg.setdefault('engines', {})
+        for ename, defaults in [
+            ('crypto_spot',  {'capital': 7500,  'leverage': 1}),
+            ('crypto_perps', {'capital': 3750,  'leverage': 3}),
+            ('stock_cfds',   {'capital': 6250,  'leverage': 2}),
+            ('options',      {'capital': 5000,  'leverage': 5}),
+            ('cash',         {'capital': 2500,  'leverage': 1}),
+        ]:
+            eng.setdefault(ename, defaults)
+
     # Trading 212 integration settings (kept for reference / legacy reads)
     gs = data.get('global_settings', {})
     for k, v in {
@@ -358,7 +401,10 @@ def get_exchange_rates():
     return rates
 
 def to_gbp(amount, currency, rates):
-    return round(float(amount) * rates.get(currency, 1.0), 2)
+    # GBX = pence — 100 GBX = 1 GBP
+    if (currency or '').upper() == 'GBX':
+        return round(float(amount) / 100.0, 2)
+    return round(float(amount) * rates.get((currency or 'GBP').upper(), 1.0), 2)
 
 def get_crypto_prices(coins):
     if not coins:
@@ -529,9 +575,10 @@ def index():
     return render_template('index.html')
 
 def _fast_price(ticker, holding, rd, rates):
-    """Return the best available price for a holding WITHOUT any live HTTP call.
+    """Return the best available price for a holding in GBP WITHOUT any live HTTP call.
     Priority: research_data cache → current_price stored on holding → manual_price → avg_price.
     The research_data cache is populated by the background yfinance refresh and T212 sync.
+    Applies currency conversion so the returned value is always in GBP.
     """
     tk = (ticker or '').upper()
     cached = rd.get(tk, {}) if tk else {}
@@ -539,7 +586,10 @@ def _fast_price(ticker, holding, rd, rates):
              holding.get('current_price') or
              holding.get('manual_price') or
              holding.get('avg_price', 0))
-    return float(price or 0)
+    price = float(price or 0)
+    # Determine currency: research_data cache takes priority over holding field
+    currency = (cached.get('currency') or holding.get('currency') or 'GBP').upper()
+    return to_gbp(price, currency, rates)
 
 
 @app.route('/api/data', methods=['GET'])
@@ -631,11 +681,19 @@ def get_all_data():
     isa_valued = []
     total_isa_gbp = 0
     for s in isa:
-        price = _fast_price(s.get('ticker'), s, rd, rates)
-        value = round(s['shares'] * price, 2) if s.get('shares') else s.get('current_value', 0)
+        is_t212 = s.get('source') == 't212' or bool(s.get('t212_synced'))
+        if is_t212:
+            # T212 already provides a correct GBP value — use it directly, no FX recalculation
+            value = s.get('current_value') or 0
+            shares = s.get('shares') or 1
+            price_gbp = round(value / shares, 4) if value else 0
+        else:
+            # Manually entered — calculate from price with currency conversion
+            price_gbp = _fast_price(s.get('ticker'), s, rd, rates)
+            value = round((s.get('shares') or 0) * price_gbp, 2)
         total_isa_gbp += value
-        invested = s.get('invested', s.get('cost_basis', 0) * s.get('shares', 1))
-        isa_valued.append({**s, 'price_gbp': round(price, 4), 'value_gbp': value,
+        invested = s.get('invested', 0)
+        isa_valued.append({**s, 'price_gbp': price_gbp, 'value_gbp': value,
             'gain_gbp': round(value - invested, 2),
             'gain_pct': round(((value - invested) / invested * 100), 1) if invested else 0,
             'tax_type': 'isa'})  # ISA = no CGT
@@ -646,13 +704,23 @@ def get_all_data():
     total_rsu_gbp = 0
     total_rsu_gain = 0
     for s in rsu_list:
-        price = _fast_price(s.get('ticker'), {**s, 'current_price': s.get('current_price', s.get('vest_price', 0))}, rd, rates)
-        value = round(s.get('shares', 0) * price, 2)
+        is_t212 = s.get('source') == 't212' or bool(s.get('t212_synced'))
+        if is_t212:
+            value = s.get('current_value') or 0
+            shares = s.get('shares') or 1
+            price_gbp = round(value / shares, 4) if value else 0
+        else:
+            # Manually entered RSU — convert with live rates
+            price_gbp = _fast_price(s.get('ticker'), {**s, 'current_price': s.get('current_price', s.get('vest_price', 0))}, rd, rates)
+            value = round((s.get('shares') or 0) * price_gbp, 2)
         total_rsu_gbp += value
-        vest_value = round(s.get('shares', 0) * s.get('vest_price', price), 2)
+        # Vest value in GBP: scale from current_value using vest_price/current_price ratio
+        vest_value = s.get('vest_value_gbp') or 0
+        if not vest_value and s.get('vest_price') and s.get('current_price') and value:
+            vest_value = round(value * s['vest_price'] / s['current_price'], 2)
         gain_since_vest = round(value - vest_value, 2)  # CGT only on gain SINCE vest
         total_rsu_gain += gain_since_vest
-        rsu_valued.append({**s, 'price_gbp': round(price, 4), 'value_gbp': value,
+        rsu_valued.append({**s, 'price_gbp': price_gbp, 'value_gbp': value,
             'vest_value_gbp': vest_value,
             'gain_since_vest': gain_since_vest,
             'gain_pct': round((gain_since_vest / vest_value * 100), 1) if vest_value else 0,
@@ -664,13 +732,19 @@ def get_all_data():
     total_stocks_gbp = 0
     total_stocks_gain = 0
     for s in stocks_list:
-        price = _fast_price(s.get('ticker'), s, rd, rates)
-        value = round(s.get('shares', 0) * price, 2)
+        is_t212 = s.get('source') == 't212' or bool(s.get('t212_synced'))
+        if is_t212:
+            value = s.get('current_value') or 0
+            shares = s.get('shares') or 1
+            price_gbp = round(value / shares, 4) if value else 0
+        else:
+            price_gbp = _fast_price(s.get('ticker'), s, rd, rates)
+            value = round((s.get('shares') or 0) * price_gbp, 2)
         total_stocks_gbp += value
-        invested = s.get('invested', s.get('cost_basis', 0) * s.get('shares', 1))
+        invested = s.get('invested', 0)
         gain = round(value - invested, 2)
         total_stocks_gain += gain
-        stocks_valued.append({**s, 'price_gbp': round(price, 4), 'value_gbp': value,
+        stocks_valued.append({**s, 'price_gbp': price_gbp, 'value_gbp': value,
             'gain_gbp': gain,
             'gain_pct': round((gain / invested * 100), 1) if invested else 0,
             'tax_type': 'cgt'})
@@ -3790,6 +3864,81 @@ def t212_get(endpoint, api_key, mode='live', api_secret=None):
         return None, str(e)
 
 
+def t212_post(endpoint, body, api_key, api_secret, mode='live'):
+    """Authenticated POST to the Trading 212 API. Returns (data, error)."""
+    base = T212_BASE.get(mode, T212_BASE['live'])
+    try:
+        if api_secret:
+            r = requests.post(f'{base}{endpoint}', json=body, auth=(api_key, api_secret), timeout=15)
+        else:
+            r = requests.post(f'{base}{endpoint}', json=body,
+                              headers={'Authorization': api_key, 'Content-Type': 'application/json'}, timeout=15)
+        if r.status_code in (200, 201):
+            return r.json(), None
+        if r.status_code == 401:
+            return None, 'Invalid credentials'
+        return None, f'T212 error {r.status_code}: {r.text[:300]}'
+    except Exception as e:
+        return None, str(e)
+
+
+def t212_delete(endpoint, api_key, api_secret, mode='live'):
+    """Authenticated DELETE to the Trading 212 API. Returns (data, error)."""
+    base = T212_BASE.get(mode, T212_BASE['live'])
+    try:
+        if api_secret:
+            r = requests.delete(f'{base}{endpoint}', auth=(api_key, api_secret), timeout=15)
+        else:
+            r = requests.delete(f'{base}{endpoint}',
+                                headers={'Authorization': api_key}, timeout=15)
+        if r.status_code in (200, 204):
+            return {}, None
+        return None, f'T212 error {r.status_code}: {r.text[:200]}'
+    except Exception as e:
+        return None, str(e)
+
+
+# Cache for T212 instrument list (refreshed every 24h)
+_t212_instruments_cache = {}
+_t212_instruments_ts    = {}
+
+def t212_find_instrument(ticker, api_key, api_secret, mode='live'):
+    """Find the T212 instrument ticker for a given symbol (e.g. AAPL → AAPL_US_EQ).
+    Returns (t212_ticker, shortName) or (None, error_msg).
+    """
+    import time
+    cache_key = f'{api_key}:{mode}'
+    now = time.time()
+    # Refresh cache if older than 24h
+    if cache_key not in _t212_instruments_cache or now - _t212_instruments_ts.get(cache_key, 0) > 86400:
+        instruments_raw, err = t212_get('/equity/metadata/instruments', api_key, mode, api_secret=api_secret)
+        if err:
+            return None, err
+        inst_list = instruments_raw if isinstance(instruments_raw, list) else []
+        mapping = {}
+        for inst in inst_list:
+            t = inst.get('ticker', '')
+            sym = t.split('_')[0].upper()
+            mapping[sym] = t
+            # Also map by shortName/name
+            for key in ('shortName', 'name'):
+                n = inst.get(key, '')
+                if n:
+                    mapping[n.upper()] = t
+        _t212_instruments_cache[cache_key] = mapping
+        _t212_instruments_ts[cache_key] = now
+
+    mapping = _t212_instruments_cache.get(cache_key, {})
+    t = mapping.get(ticker.upper())
+    if t:
+        return t, None
+    # Try partial match
+    for sym, t_val in mapping.items():
+        if sym.startswith(ticker.upper()):
+            return t_val, None
+    return None, f'Instrument not found for {ticker} in T212'
+
+
 def t212_strip_ticker(t212_ticker):
     """Convert T212 ticker format (e.g. AAPL_US_EQ) to clean ticker (AAPL)."""
     # T212 format: BASE_EXCHANGE_TYPE e.g. AAPL_US_EQ, VWRL_EQ, TSLA_US_EQ
@@ -6341,6 +6490,747 @@ def remove_from_watchlist(ticker):
     data['watchlist'] = [w for w in wl if w.upper() != ticker]
     save_data(data)
     return jsonify({'watchlist': data['watchlist']})
+
+
+# ── Trading Signals Engine ────────────────────────────────────────────────────
+
+def _ema(arr, period):
+    """Exponential moving average."""
+    import numpy as np
+    alpha = 2.0 / (period + 1)
+    result = np.zeros(len(arr))
+    if len(arr) == 0:
+        return result
+    result[0] = arr[0]
+    for i in range(1, len(arr)):
+        result[i] = alpha * arr[i] + (1 - alpha) * result[i - 1]
+    return result
+
+
+def _rsi(prices, period=14):
+    """RSI indicator."""
+    import numpy as np
+    if len(prices) < period + 1:
+        return np.full(len(prices), 50.0)
+    deltas = np.diff(prices)
+    gains  = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+    out = np.full(len(prices), 50.0)
+    ag = np.mean(gains[:period])
+    al = np.mean(losses[:period])
+    for i in range(period, len(prices) - 1):
+        ag = (ag * (period - 1) + gains[i]) / period
+        al = (al * (period - 1) + losses[i]) / period
+        rs = ag / al if al != 0 else 100.0
+        out[i + 1] = 100 - (100 / (1 + rs))
+    return out
+
+
+def _atr(highs, lows, closes, period=14):
+    """Average True Range."""
+    import numpy as np
+    if len(closes) < 2:
+        return np.zeros(len(closes))
+    tr = np.maximum(highs[1:] - lows[1:],
+         np.maximum(np.abs(highs[1:] - closes[:-1]),
+                    np.abs(lows[1:]  - closes[:-1])))
+    out = np.zeros(len(closes))
+    if len(tr) < period:
+        return out
+    out[period] = np.mean(tr[:period])
+    for i in range(period + 1, len(closes)):
+        out[i] = (out[i - 1] * (period - 1) + tr[i - 1]) / period
+    return out
+
+
+def _adx(highs, lows, closes, period=14):
+    """ADX indicator. Returns adx, +DI, -DI arrays."""
+    import numpy as np
+    n = len(closes)
+    if n < period + 2:
+        return np.full(n, 20.0), np.full(n, 20.0), np.full(n, 20.0)
+    tr_arr = np.zeros(n)
+    pdm    = np.zeros(n)
+    ndm    = np.zeros(n)
+    for i in range(1, n):
+        h_diff = highs[i] - highs[i - 1]
+        l_diff = lows[i - 1] - lows[i]
+        tr_arr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        pdm[i] = h_diff if h_diff > max(l_diff, 0) else 0.0
+        ndm[i] = l_diff if l_diff > max(h_diff, 0) else 0.0
+
+    atr14  = np.zeros(n)
+    pdi14  = np.zeros(n)
+    ndi14  = np.zeros(n)
+    atr14[period]  = np.sum(tr_arr[1:period + 1])
+    pdi14[period]  = np.sum(pdm[1:period + 1])
+    ndi14[period]  = np.sum(ndm[1:period + 1])
+    for i in range(period + 1, n):
+        atr14[i] = atr14[i - 1] - atr14[i - 1] / period + tr_arr[i]
+        pdi14[i] = pdi14[i - 1] - pdi14[i - 1] / period + pdm[i]
+        ndi14[i] = ndi14[i - 1] - ndi14[i - 1] / period + ndm[i]
+
+    plus_di  = np.where(atr14 > 0, 100 * pdi14 / atr14, 0.0)
+    minus_di = np.where(atr14 > 0, 100 * ndi14 / atr14, 0.0)
+    dx = np.where(plus_di + minus_di > 0, 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di), 0.0)
+    adx_out = np.zeros(n)
+    adx_out[period * 2] = np.mean(dx[period:period * 2 + 1])
+    for i in range(period * 2 + 1, n):
+        adx_out[i] = (adx_out[i - 1] * (period - 1) + dx[i]) / period
+    return adx_out, plus_di, minus_di
+
+
+def _bollinger(prices, period=20, sigma=2.0):
+    """Bollinger Bands."""
+    import numpy as np
+    upper = np.zeros(len(prices))
+    lower = np.zeros(len(prices))
+    for i in range(period, len(prices)):
+        w = prices[i - period:i]
+        m = np.mean(w)
+        s = np.std(w, ddof=0)
+        upper[i] = m + sigma * s
+        lower[i] = m - sigma * s
+    return upper, lower
+
+
+def _stoch(closes, highs, lows, period=14):
+    """Stochastic %K."""
+    import numpy as np
+    k = np.full(len(closes), 50.0)
+    for i in range(period, len(closes)):
+        hh = np.max(highs[i - period:i])
+        ll = np.min(lows[i  - period:i])
+        k[i] = 100 * (closes[i] - ll) / (hh - ll) if hh != ll else 50.0
+    return k
+
+
+def _pick_engine(ticker, cfg):
+    """Pick best engine for ticker based on asset type."""
+    t = ticker.upper()
+    crypto_syms = {'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'AVAX', 'LINK', 'DOT',
+                   'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD'}
+    if t in crypto_syms or t.endswith('-USD'):
+        return 'crypto_spot'
+    return 'stock_cfds'
+
+
+def _make_signal(ticker, direction, signal_type, entry, stop, target, pos_size, risk_amount, strength, engine, timeframe, explanation=''):
+    """Build a signal dict."""
+    import uuid as _uuid
+    pos_size = max(0, round(float(pos_size), 4))
+    max_pos  = float(engine) if isinstance(engine, (int, float)) else 0
+    return {
+        'id':           str(_uuid.uuid4()),
+        'ticker':       ticker.upper(),
+        'direction':    direction,
+        'signal_type':  signal_type,
+        'entry_price':  round(float(entry), 6),
+        'stop_loss':    round(float(stop),  6),
+        'target':       round(float(target), 6),
+        'position_size': pos_size,
+        'risk_amount':  round(float(risk_amount), 2),
+        'strength':     round(float(strength), 4),
+        'explanation':  explanation,
+        'engine':       engine,
+        'timeframe':    timeframe,
+        'generated_at': datetime.utcnow().isoformat() + 'Z',
+    }
+
+
+def _compute_signals_for_ticker(ticker, cfg, risk_pct, data):
+    """Compute all applicable signals for one ticker."""
+    import numpy as np
+    try:
+        import yfinance as yf
+    except ImportError:
+        return []
+
+    yf_sym = ticker
+    crypto_bases = {'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'AVAX', 'LINK', 'DOT', 'LTC'}
+    if ticker.upper() in crypto_bases:
+        yf_sym = ticker.upper() + '-USD'
+
+    try:
+        hist = yf.download(yf_sym, period='8mo', interval='1d', progress=False, auto_adjust=True)
+    except Exception:
+        return []
+
+    if hist is None or len(hist) < 55:
+        return []
+
+    # Flatten MultiIndex columns (yfinance 0.2+)
+    if hasattr(hist.columns, 'get_level_values'):
+        hist.columns = hist.columns.get_level_values(0)
+
+    closes  = hist['Close'].values.astype(float).flatten()
+    highs   = hist['High'].values.astype(float).flatten()
+    lows    = hist['Low'].values.astype(float).flatten()
+    volumes = hist['Volume'].values.astype(float).flatten()
+
+    if len(closes) < 55:
+        return []
+
+    ema8   = _ema(closes, 8)
+    ema21  = _ema(closes, 21)
+    ema50  = _ema(closes, 50)
+    ema200 = _ema(closes, 200) if len(closes) >= 200 else _ema(closes, min(len(closes) - 1, 100))
+    rsi14  = _rsi(closes, 14)
+    atr14  = _atr(highs, lows, closes, 14)
+    adx14, plus_di, minus_di = _adx(highs, lows, closes, 14)
+    bb_upper, bb_lower = _bollinger(closes, 20)
+    stoch_k = _stoch(closes, highs, lows, 14)
+
+    vol_ratio = np.zeros(len(volumes))
+    for i in range(20, len(volumes)):
+        avg = np.mean(volumes[i - 20:i])
+        vol_ratio[i] = volumes[i] / avg if avg > 0 else 1.0
+
+    # Current bar values
+    c   = float(closes[-1])
+    h   = float(highs[-1])
+    l   = float(lows[-1])
+    e8  = float(ema8[-1])
+    e21 = float(ema21[-1])
+    e50 = float(ema50[-1])
+    e200= float(ema200[-1])
+    r   = float(rsi14[-1])
+    atr = float(atr14[-1])
+    adx = float(adx14[-1])
+    stk = float(stoch_k[-1])
+    vr  = float(vol_ratio[-1])
+    bbl = float(bb_lower[-1])
+    bbu = float(bb_upper[-1])
+
+    if atr <= 0:
+        return []
+
+    # Previous bars for sweep logic
+    recent_high20 = float(np.max(highs[-22:-1])) if len(highs) >= 22 else float(highs[-1])
+    recent_low20  = float(np.min(lows[-22:-1]))  if len(lows) >= 22 else float(lows[-1])
+    prev_low      = float(lows[-2])
+    prev_high     = float(highs[-2])
+
+    # Regime
+    uptrend   = e50 > e200 and e8 > e21
+    downtrend = e50 < e200 and e8 < e21
+    weekly_bullish = c > float(closes[-6]) and e50 > e200
+    weekly_bearish = c < float(closes[-6]) and e50 < e200
+
+    engine = _pick_engine(ticker, cfg)
+    engines_cfg = cfg.get('engines', {})
+    engine_cap  = float((engines_cfg.get(engine) or {}).get('capital', 5000))
+    risk_amt    = engine_cap * risk_pct
+    max_pos_val = engine_cap * 0.30
+
+    rd = data.get('research_data', {}).get(ticker.upper(), {})
+    score_str = ''
+    composite = rd.get('composite')
+    if composite:
+        score_str = f' {ticker} scores {composite}/100 in Stock Intelligence.'
+
+    sigs = []
+
+    # ── 1. trend_pullback_long ────────────────────────────────────────────────
+    near_ema21 = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
+    if uptrend and near_ema21 and 42 <= r <= 62 and vr > 0.9 and weekly_bullish:
+        stop   = c - 1.8 * atr
+        target = c + 3.5 * (c - stop)
+        dist   = c - stop
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([near_ema21, 42 <= r <= 62, vr > 0.9, weekly_bullish, uptrend]) / 5
+        strength = 0.60 + 0.25 * quality
+        expl = (f'Pulled back to 21 EMA in uptrend. RSI {r:.0f} in bullish zone.'
+                f' Volume at {vr:.1f}x average.{score_str}')
+        sigs.append(_make_signal(ticker, 'long', 'trend_pullback_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    # ── 2. momentum_breakout_long ─────────────────────────────────────────────
+    breaks_high = c > recent_high20 and prev_low < recent_high20  # breakout candle
+    if breaks_high and vr > 1.3 and 55 <= r <= 78 and adx > 20:
+        stop   = float(np.min(lows[-3:])) if len(lows) >= 3 else c - 1.5 * atr
+        target = c + 4.0 * (c - stop)
+        dist   = c - stop
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([vr > 1.3, vr > 1.5, adx > 25, 55 <= r <= 78]) / 4
+        strength = 0.62 + 0.28 * quality
+        expl = (f'Breaking 20-day high of {recent_high20:.2f} on {vr:.1f}x volume.'
+                f' ADX {adx:.0f} confirms momentum.{score_str}')
+        sigs.append(_make_signal(ticker, 'long', 'momentum_breakout_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    # ── 3. liquidity_sweep_long ───────────────────────────────────────────────
+    swept_low = prev_low < recent_low20 and c > recent_low20  # swept below then closed back
+    disp_candle = (c - l) > 1.5 * atr
+    if swept_low and disp_candle:
+        stop   = prev_low - 0.2 * atr
+        target = c + 4.0 * (c - stop)
+        dist   = c - stop
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([swept_low, disp_candle, r < 45, e50 > e200]) / 4
+        strength = 0.63 + 0.27 * quality
+        expl = (f'Liquidity sweep below {recent_low20:.2f} rejected with strong close.'
+                f' Displacement candle shows buyer absorption.{score_str}')
+        sigs.append(_make_signal(ticker, 'long', 'liquidity_sweep_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    # ── 4. mean_reversion_long ────────────────────────────────────────────────
+    ranging = not uptrend and not downtrend and adx < 25
+    at_lower_bb = bbl > 0 and c <= bbl * 1.005
+    if ranging and at_lower_bb and stk < 15 and r < 32:
+        stop   = c - 1.5 * atr
+        target = c + 3.0 * (c - stop)
+        dist   = c - stop
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([at_lower_bb, stk < 15, r < 32, ranging]) / 4
+        strength = 0.60 + 0.25 * quality
+        expl = (f'Price at lower Bollinger Band in ranging market. RSI {r:.0f},'
+                f' Stochastic {stk:.0f} both oversold.{score_str}')
+        sigs.append(_make_signal(ticker, 'long', 'mean_reversion_long',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    # ── 5. trend_continuation_short ──────────────────────────────────────────
+    near_ema21_short = abs(c - e21) / e21 < 0.012 if e21 > 0 else False
+    if downtrend and near_ema21_short and 38 <= r <= 58 and weekly_bearish:
+        stop   = c + 1.8 * atr
+        target = c - 3.5 * (stop - c)
+        dist   = stop - c
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([near_ema21_short, downtrend, 38 <= r <= 58, weekly_bearish]) / 4
+        strength = 0.60 + 0.25 * quality
+        expl = (f'Bearish trend continuation: bounce to 21 EMA rejected.'
+                f' RSI {r:.0f} in bearish zone, weekly trend down.{score_str}')
+        sigs.append(_make_signal(ticker, 'short', 'trend_continuation_short',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    # ── 6. liquidity_sweep_short ──────────────────────────────────────────────
+    swept_high = prev_high > recent_high20 and c < recent_high20
+    disp_candle_short = (h - c) > 1.5 * atr
+    if swept_high and disp_candle_short:
+        stop   = prev_high + 0.2 * atr
+        target = c - 4.0 * (stop - c)
+        dist   = stop - c
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([swept_high, disp_candle_short, r > 55, e50 < e200]) / 4
+        strength = 0.63 + 0.27 * quality
+        expl = (f'Liquidity sweep above {recent_high20:.2f} rejected with strong sell candle.'
+                f' Sellers absorbed supply at highs.{score_str}')
+        sigs.append(_make_signal(ticker, 'short', 'liquidity_sweep_short',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    # ── 7. momentum_breakdown_short ──────────────────────────────────────────
+    breaks_low = c < recent_low20 and prev_high > recent_low20
+    if breaks_low and vr > 1.3 and adx > 25 and 22 <= r <= 45:
+        stop   = float(np.max(highs[-3:])) if len(highs) >= 3 else c + 1.5 * atr
+        target = c - 4.0 * (stop - c)
+        dist   = stop - c
+        sz     = min(risk_amt / dist, max_pos_val / c) if dist > 0 else 0
+        quality = sum([vr > 1.3, vr > 1.5, adx > 30, 22 <= r <= 45]) / 4
+        strength = 0.62 + 0.28 * quality
+        expl = (f'Breaking 20-day low of {recent_low20:.2f} on {vr:.1f}x volume.'
+                f' ADX {adx:.0f} — momentum accelerating.{score_str}')
+        sigs.append(_make_signal(ticker, 'short', 'momentum_breakdown_short',
+                                 c, stop, target, sz, risk_amt, strength, engine, 'daily', expl))
+
+    return sigs
+
+
+def compute_market_regime(data=None):
+    """Compute market regime from SPY (stocks) and BTC-USD (crypto).
+    Returns regime dict with label, adx, trend, spy_price, btc_price.
+    """
+    import numpy as np
+    try:
+        import yfinance as yf
+    except ImportError:
+        return {'label': 'unknown', 'adx': None, 'trend': None}
+
+    try:
+        spy = yf.download('SPY', period='6mo', interval='1d', progress=False, auto_adjust=True)
+        if spy is None or len(spy) < 55:
+            return {'label': 'unknown', 'adx': None, 'trend': None}
+        if hasattr(spy.columns, 'get_level_values'):
+            spy.columns = spy.columns.get_level_values(0)
+        closes = spy['Close'].values.astype(float).flatten()
+        highs  = spy['High'].values.astype(float).flatten()
+        lows   = spy['Low'].values.astype(float).flatten()
+
+        ema50  = _ema(closes, 50)
+        ema200 = _ema(closes, min(len(closes) - 1, 200))
+        adx14, pdm, ndm = _adx(highs, lows, closes, 14)
+
+        cur_e50  = float(ema50[-1])
+        cur_e200 = float(ema200[-1])
+        cur_adx  = float(adx14[-1])
+        cur_close = float(closes[-1])
+
+        if cur_e50 > cur_e200 and cur_adx > 25:
+            label = 'trending_up'
+        elif cur_e50 < cur_e200 and cur_adx > 25:
+            label = 'trending_down'
+        elif cur_adx > 35:
+            label = 'volatile'
+        else:
+            label = 'ranging'
+
+        return {
+            'label':     label,
+            'adx':       round(cur_adx, 1),
+            'trend':     'up' if cur_e50 > cur_e200 else 'down',
+            'spy_price': round(cur_close, 2),
+            'ema50':     round(cur_e50, 2),
+            'ema200':    round(cur_e200, 2),
+        }
+    except Exception as e:
+        print(f'[regime] {e}')
+        return {'label': 'unknown', 'adx': None, 'trend': None, 'error': str(e)}
+
+
+def generate_trading_signals(data):
+    """Generate trading signals for all portfolio + watchlist tickers."""
+    tickers = set()
+    for bucket, items in data.get('investments', {}).items():
+        for h in items:
+            t = h.get('ticker') or h.get('coin_id')
+            if t:
+                tickers.add(str(t).upper())
+    for t in data.get('watchlist', []):
+        tickers.add(str(t).upper())
+    for t in data.get('research_data', {}).keys():
+        tickers.add(str(t).upper())
+
+    # Remove empty/invalid
+    tickers = {t for t in tickers if t and len(t) >= 1}
+
+    cfg      = data.get('signals_data', {}).get('config', {})
+    risk_pct = float(cfg.get('risk_per_trade', 0.015))
+
+    signals = []
+    for ticker in sorted(tickers):
+        try:
+            sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data)
+            signals.extend(sigs)
+        except Exception as e:
+            print(f'[signals] {ticker}: {e}')
+
+    signals = [s for s in signals if s.get('strength', 0) >= 0.60]
+    signals.sort(key=lambda x: x.get('strength', 0), reverse=True)
+    return signals
+
+
+# ── Trading Signals: API Endpoints ────────────────────────────────────────────
+
+@app.route('/api/signals', methods=['GET'])
+def get_signals():
+    """Generate and return active trading signals."""
+    data = load_data()
+    try:
+        signals = generate_trading_signals(data)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        signals = []
+    # Persist generated signals
+    sd = data.setdefault('signals_data', {})
+    sd['active_signals'] = signals
+    # Also refresh regime
+    try:
+        regime = compute_market_regime(data)
+        sd['regime'] = regime
+    except Exception:
+        pass
+    save_data(data)
+    return jsonify({'signals': signals, 'regime': sd.get('regime', {})})
+
+
+@app.route('/api/signals/regime', methods=['GET'])
+def get_regime():
+    data = load_data()
+    sd   = data.get('signals_data', {})
+    regime = sd.get('regime', {'label': 'unknown'})
+    # Refresh if stale (no spy_price)
+    if not regime.get('spy_price'):
+        try:
+            regime = compute_market_regime(data)
+            sd['regime'] = regime
+            save_data(data)
+        except Exception:
+            pass
+    return jsonify(regime)
+
+
+@app.route('/api/signals/take/<sig_id>', methods=['POST'])
+def take_signal(sig_id):
+    data = load_data()
+    sd   = data.setdefault('signals_data', {})
+    cfg  = sd.get('config', {})
+    max_pos = int(cfg.get('max_positions', 4))
+
+    open_pos = sd.get('open_positions', [])
+    active   = sd.get('active_signals', [])
+
+    # Find signal
+    sig = next((s for s in active if s['id'] == sig_id), None)
+    if not sig:
+        return jsonify({'error': 'Signal not found'}), 404
+
+    # Guard: max positions
+    if len(open_pos) >= max_pos:
+        return jsonify({'error': f'Max positions ({max_pos}) reached'}), 400
+
+    # Guard: duplicate ticker
+    if any(p['ticker'] == sig['ticker'] for p in open_pos):
+        return jsonify({'error': f'Already holding a position in {sig["ticker"]}'}), 400
+
+    # Guard: portfolio heat
+    all_engines_cap = sum(e.get('capital', 0) for e in cfg.get('engines', {}).values())
+    total_risk = sum(float(p.get('risk_amount', 0)) for p in open_pos)
+    heat = total_risk / all_engines_cap if all_engines_cap > 0 else 0
+    if heat > 0.10:
+        return jsonify({'error': f'Portfolio heat at {heat*100:.1f}% — max 10%'}), 400
+
+    # Create position
+    import uuid as _uuid
+    pos = {
+        'id':               str(_uuid.uuid4()),
+        'signal_id':        sig_id,
+        'ticker':           sig['ticker'],
+        'direction':        sig['direction'],
+        'entry_price':      sig['entry_price'],
+        'entry_date':       datetime.utcnow().strftime('%Y-%m-%d'),
+        'current_stop':     sig['stop_loss'],
+        'target':           sig['target'],
+        'size':             sig['position_size'],
+        'risk_amount':      sig['risk_amount'],
+        'partial_exit_done': False,
+        'engine':           sig['engine'],
+        'signal_type':      sig['signal_type'],
+        'original_stop':    sig['stop_loss'],
+    }
+    sd.setdefault('open_positions', []).append(pos)
+    # Remove from active signals
+    sd['active_signals'] = [s for s in active if s['id'] != sig_id]
+    save_data(data)
+    return jsonify({'position': pos})
+
+
+@app.route('/api/signals/close/<pos_id>', methods=['POST'])
+def close_position(pos_id):
+    data  = load_data()
+    sd    = data.setdefault('signals_data', {})
+    body  = request.get_json(force=True, silent=True) or {}
+    exit_price = float(body.get('exit_price', 0))
+
+    open_pos = sd.get('open_positions', [])
+    pos = next((p for p in open_pos if p['id'] == pos_id), None)
+    if not pos:
+        return jsonify({'error': 'Position not found'}), 404
+
+    entry   = float(pos['entry_price'])
+    orig_stop = float(pos.get('original_stop', pos.get('current_stop', entry)))
+    stop_dist = abs(entry - orig_stop) if orig_stop != entry else entry * 0.02
+    price_diff = (exit_price - entry) if pos['direction'] == 'long' else (entry - exit_price)
+    r_multiple = price_diff / stop_dist if stop_dist > 0 else 0
+
+    trade = {
+        **pos,
+        'exit_price':  round(exit_price, 6),
+        'exit_date':   datetime.utcnow().strftime('%Y-%m-%d'),
+        'r_multiple':  round(r_multiple, 3),
+        'pnl':         round(price_diff * float(pos.get('size', 1)), 2),
+        'result':      'win' if r_multiple > 0 else 'loss',
+    }
+    sd.setdefault('closed_trades', []).append(trade)
+    sd['open_positions'] = [p for p in open_pos if p['id'] != pos_id]
+    save_data(data)
+    return jsonify({'trade': trade, 'r_multiple': r_multiple})
+
+
+@app.route('/api/signals/update-stop/<pos_id>', methods=['POST'])
+def update_stop(pos_id):
+    data = load_data()
+    sd   = data.setdefault('signals_data', {})
+    body = request.get_json(force=True, silent=True) or {}
+    new_stop = float(body.get('stop', 0))
+
+    open_pos = sd.get('open_positions', [])
+    pos = next((p for p in open_pos if p['id'] == pos_id), None)
+    if not pos:
+        return jsonify({'error': 'Position not found'}), 404
+
+    pos['current_stop'] = round(new_stop, 6)
+    save_data(data)
+    return jsonify({'position': pos})
+
+
+@app.route('/api/signals/positions', methods=['GET'])
+def get_positions():
+    data = load_data()
+    positions = data.get('signals_data', {}).get('open_positions', [])
+    # Enrich with current price from research_data
+    rd = data.get('research_data', {})
+    for p in positions:
+        t = p['ticker']
+        p['current_price'] = rd.get(t, {}).get('current_price')
+    return jsonify({'positions': positions})
+
+
+@app.route('/api/signals/history', methods=['GET'])
+def get_trade_history():
+    data   = load_data()
+    trades = data.get('signals_data', {}).get('closed_trades', [])
+    if not trades:
+        return jsonify({'trades': [], 'stats': None})
+
+    wins       = [t for t in trades if t.get('result') == 'win']
+    losses     = [t for t in trades if t.get('result') == 'loss']
+    win_rate   = len(wins) / len(trades) if trades else 0
+    avg_r      = sum(t.get('r_multiple', 0) for t in trades) / len(trades)
+    avg_win_r  = sum(t.get('r_multiple', 0) for t in wins)  / len(wins)  if wins   else 0
+    avg_loss_r = sum(abs(t.get('r_multiple', 0)) for t in losses) / len(losses) if losses else 0
+    profit_factor = (avg_win_r * len(wins)) / (avg_loss_r * len(losses)) if losses and avg_loss_r > 0 else None
+    total_pnl  = sum(t.get('pnl', 0) for t in trades)
+
+    # Monthly PnL
+    monthly = {}
+    for t in trades:
+        m = str(t.get('exit_date', ''))[:7]
+        if m:
+            monthly[m] = round(monthly.get(m, 0) + t.get('pnl', 0), 2)
+
+    best  = max(trades, key=lambda x: x.get('r_multiple', 0), default=None)
+    worst = min(trades, key=lambda x: x.get('r_multiple', 0), default=None)
+
+    # Streak
+    streak = 0
+    streak_type = None
+    for t in reversed(trades):
+        r = t.get('result')
+        if streak_type is None:
+            streak_type = r
+        if r == streak_type:
+            streak += 1
+        else:
+            break
+
+    stats = {
+        'total_trades':   len(trades),
+        'win_rate':       round(win_rate, 4),
+        'avg_r':          round(avg_r, 3),
+        'avg_win_r':      round(avg_win_r, 3),
+        'avg_loss_r':     round(avg_loss_r, 3),
+        'profit_factor':  round(profit_factor, 3) if profit_factor else None,
+        'total_pnl':      round(total_pnl, 2),
+        'monthly_pnl':    monthly,
+        'best_trade':     best,
+        'worst_trade':    worst,
+        'streak':         streak,
+        'streak_type':    streak_type,
+    }
+    return jsonify({'trades': trades, 'stats': stats})
+
+
+@app.route('/api/signals/config', methods=['POST'])
+def update_signals_config():
+    data = load_data()
+    body = request.get_json(force=True, silent=True) or {}
+    sd   = data.setdefault('signals_data', {})
+    cfg  = sd.setdefault('config', {})
+    # Only update known safe keys
+    for k in ('risk_per_trade', 'max_positions', 'max_drawdown', 'daily_loss_limit', 'mode'):
+        if k in body:
+            cfg[k] = body[k]
+    if 'engines' in body and isinstance(body['engines'], dict):
+        for eng, vals in body['engines'].items():
+            if eng in cfg.get('engines', {}):
+                cfg['engines'][eng].update({k: v for k, v in vals.items()
+                                             if k in ('capital', 'leverage')})
+    save_data(data)
+    return jsonify({'config': cfg})
+
+
+@app.route('/api/signals/place-order', methods=['POST'])
+def place_t212_order():
+    """Place a market or limit order via Trading 212 API for a given signal/position."""
+    data = load_data()
+    body = request.get_json(force=True, silent=True) or {}
+
+    ticker      = body.get('ticker', '').upper()
+    direction   = body.get('direction', 'long')   # 'long' or 'short'
+    order_type  = body.get('order_type', 'market') # 'market' or 'limit'
+    quantity    = body.get('quantity')              # shares / units
+    limit_price = body.get('limit_price')
+    conn_id     = body.get('conn_id')               # specific T212 connection id (optional)
+
+    if not ticker:
+        return jsonify({'error': 'ticker required'}), 400
+
+    # Pick T212 connection
+    conns = [c for c in data.get('t212_connections', []) if c.get('enabled', True)]
+    if not conns:
+        return jsonify({'error': 'No enabled Trading 212 connections configured'}), 400
+
+    conn = next((c for c in conns if c['id'] == conn_id), None) if conn_id else conns[0]
+    if not conn:
+        return jsonify({'error': 'T212 connection not found'}), 404
+
+    api_key    = conn['api_key']
+    api_secret = conn['api_secret']
+    mode       = conn.get('mode', 'live')
+
+    # Resolve T212 instrument ticker
+    t212_tick, err = t212_find_instrument(ticker, api_key, api_secret, mode)
+    if err:
+        return jsonify({'error': f'Instrument lookup failed: {err}'}), 400
+
+    # Build order body
+    side = 'BUY' if direction == 'long' else 'SELL'
+    if order_type == 'limit' and limit_price:
+        endpoint = '/equity/orders/limit'
+        order_body = {
+            'ticker':       t212_tick,
+            'quantity':     float(quantity) if quantity else None,
+            'limitPrice':   float(limit_price),
+            'timeValidity': 'DAY',
+        }
+    else:
+        endpoint = '/equity/orders/market'
+        order_body = {
+            'ticker':   t212_tick,
+            'quantity': float(quantity) if quantity else None,
+        }
+
+    # Remove None values
+    order_body = {k: v for k, v in order_body.items() if v is not None}
+
+    result, err = t212_post(endpoint, order_body, api_key, api_secret, mode)
+    if err:
+        return jsonify({'error': err}), 400
+
+    return jsonify({
+        'ok':          True,
+        'order':       result,
+        't212_ticker': t212_tick,
+        'side':        side,
+    })
+
+
+@app.route('/api/signals/instruments', methods=['GET'])
+def get_t212_instrument():
+    """Look up the T212 instrument ticker for a given symbol."""
+    data   = load_data()
+    ticker = request.args.get('ticker', '').upper()
+    if not ticker:
+        return jsonify({'error': 'ticker param required'}), 400
+
+    conns = [c for c in data.get('t212_connections', []) if c.get('enabled', True)]
+    if not conns:
+        return jsonify({'t212_ticker': None, 'error': 'No T212 connections'})
+
+    conn = conns[0]
+    t212_tick, err = t212_find_instrument(ticker, conn['api_key'], conn['api_secret'], conn.get('mode', 'live'))
+    if err:
+        return jsonify({'t212_ticker': None, 'error': err})
+    return jsonify({'t212_ticker': t212_tick, 'ticker': ticker})
 
 
 # ── Background startup refresh ────────────────────────────────────────────────
