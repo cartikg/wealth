@@ -563,6 +563,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
       Investments
     </div>
+    <div class="nav-item" onclick="nav('intelligence',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      Stock Intelligence
+    </div>
+    <div class="nav-item" onclick="nav('signals',this)">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      Trading Signals
+    </div>
     <div class="nav-item" onclick="nav('mortgage',this)">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0V15"/></svg>
       Mortgage & Debt
@@ -960,10 +968,18 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
       <!-- Table -->
       <div class="card">
+        <!-- Transaction bulk-select bar -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllTxns()">☑ Select All</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="txn-deselect-btn" onclick="deselectAllTxns()">☐ Deselect All</button>
+          <span style="font-size:12px;color:var(--text3)" id="txn-bulk-count"></span>
+          <button class="btn btn-ghost btn-sm" id="txn-bulk-delete-btn" style="display:none;color:var(--rose)" onclick="bulkDeleteTxns()">🗑 Delete Selected</button>
+        </div>
         <div class="txn-table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width:28px;padding:8px 4px 8px 14px"><input type="checkbox" id="txn-select-all-cb" style="accent-color:var(--gold);cursor:pointer" onchange="txnSelectAllChange(this)" title="Select all visible"></th>
                 <th>Date</th>
                 <th>Description</th>
                 <th>Category</th>
@@ -1117,7 +1133,15 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
       <!-- Offline Accounts -->
       <div style="margin-top:20px">
-        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text2)" id="offline-accounts-label" style="display:none">Offline Accounts</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div style="font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--text2)" id="offline-accounts-label">Offline Accounts</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllAccounts()">☑ Select All</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="acc-deselect-btn" onclick="deselectAllAccounts()">☐ Deselect All</button>
+            <span style="font-size:12px;color:var(--text3)" id="acc-bulk-count"></span>
+            <button class="btn btn-ghost btn-sm" id="acc-bulk-delete-btn" style="display:none;color:var(--rose)" onclick="bulkDeleteAccounts()">🗑 Delete Selected</button>
+          </div>
+        </div>
         <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px"></div>
       </div>
     </div>
@@ -1136,6 +1160,11 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
             <span style="font-size:12px;color:var(--text3)">After CGT</span>
             <label class="toggle-switch"><input type="checkbox" id="inv-cgt-toggle" onchange="toggleInvCGT()"><span class="toggle-slider"></span></label>
           </label>
+          <button id="t212-sync-btn-inv" onclick="t212SyncAll()" style="display:none;align-items:center;gap:5px;background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:500">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Sync T212
+          </button>
+          <span id="t212-last-synced-inv" style="font-size:11px;color:var(--text3)"></span>
         </div>
       </div>
 
@@ -1152,6 +1181,48 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
               <div><div class="card-label">CGT Liability</div><div style="font-family:var(--font-display);font-size:18px;color:var(--rose)" id="inv-cgt-liability" class="privacy-blur">£—</div></div>
               <div><div class="card-label">Net After CGT</div><div style="font-family:var(--font-display);font-size:18px;color:var(--teal)" id="inv-net-after-cgt" class="privacy-blur">£—</div></div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Portfolio KPI Strip ──────────────────────────────────── -->
+      <div id="portfolio-kpi-strip" style="display:none;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Portfolio Value</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-value" class="privacy-blur">£—</div>
+            <div style="font-size:10px;color:var(--text3)" id="pkpi-invested" class="privacy-blur">£— invested</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Total Return</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-gain" class="privacy-blur">£—</div>
+            <div style="font-size:10px" id="pkpi-gain-pct" class="privacy-blur">—%</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Annual Income</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-income" class="privacy-blur">£—</div>
+            <div style="font-size:10px;color:var(--text3)" id="pkpi-yield">—% yield/yr</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:11px 14px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px">Holdings</div>
+            <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:4px 0 2px" id="pkpi-holdings">—</div>
+            <div style="font-size:10px;color:var(--text3)">across all buckets</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── T212 Live Summary ─────────────────────────────────────────── -->
+      <div id="t212-live-card" style="display:none;margin-bottom:16px">
+        <div class="card" style="border-color:rgba(59,130,246,0.2);padding:0;overflow:hidden">
+          <div style="padding:11px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
+            <div>
+              <span style="font-size:13px;font-weight:500">📊 T212 Live</span>
+              <span style="font-size:11px;color:var(--text3);margin-left:8px">Cash · P&amp;L · Open orders</span>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="loadT212LiveSummary()">↻ Refresh</button>
+          </div>
+          <div id="t212-live-content" style="padding:14px">
+            <div style="text-align:center;color:var(--text3);font-size:12px;padding:8px 0">Click Refresh to load live data from Trading 212</div>
           </div>
         </div>
       </div>
@@ -1324,9 +1395,22 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div id="dividend-calendar" style="font-size:12px"></div>
       </div>
 
+      <!-- ── Events Calendar ───────────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:16px;display:none" id="events-calendar-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-label">📅 Upcoming Events</div>
+          <div style="font-size:11px;color:var(--text3)">Earnings &amp; ex-dividends for held stocks</div>
+        </div>
+        <div id="events-calendar-content">
+          <div style="text-align:center;color:var(--text3);font-size:12px;padding:8px">Loading…</div>
+        </div>
+      </div>
+
       <!-- Bulk operations bar -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllInvestments()">☑ Select All</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="inv-deselect-btn" onclick="deselectAllInvestments()">☐ Deselect All</button>
           <span style="font-size:12px;color:var(--text3)" id="bulk-select-count"></span>
         </div>
         <div style="display:flex;gap:8px">
@@ -1556,6 +1640,384 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       <div class="card" style="margin-top:16px" id="income-tax-card">
         <div class="card-label" style="margin-bottom:14px">🧾 Income Tax Breakdown</div>
         <div id="income-tax-content"></div>
+      </div>
+
+    </div>
+
+    <!-- ── STOCK INTELLIGENCE ────────────────────────────────────────────── -->
+    <div id="section-intelligence" class="section">
+
+      <!-- Header bar -->
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-family:var(--font-display);font-size:26px;font-weight:600">💡 Stock Intelligence</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Research any ticker · Score your portfolio · AI-powered recommendations</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="position:relative">
+            <input id="si-search" type="text" class="form-input" placeholder="Search or add ticker… e.g. NVDA" style="width:200px;padding-right:36px" oninput="siSearchInput()" onkeydown="if(event.key==='Enter')siAddTicker()">
+            <button onclick="siAddTicker()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--teal);cursor:pointer;font-size:16px" title="Add ticker">+</button>
+          </div>
+          <button class="btn btn-gold btn-sm" onclick="siLoadRecommendations()">🤖 AI Picks</button>
+          <button class="btn btn-sm" onclick="siRefreshAll()" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)">🔄 Refresh All</button>
+        </div>
+      </div>
+
+      <!-- View filter pills -->
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="si-filter-bar">
+        <button class="chip active" onclick="siSetFilter('all',this)">★ All</button>
+        <button class="chip" onclick="siSetFilter('portfolio',this)">📁 My Portfolio</button>
+        <button class="chip" onclick="siSetFilter('watchlist',this)">👁 Watchlist</button>
+        <button class="chip" onclick="siSetFilter('ai',this)">🤖 AI Picks</button>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--text3)">Sort:</span>
+          <select id="si-sort" class="form-select" style="padding:4px 8px;font-size:12px" onchange="siRenderTable()">
+            <option value="score">Score ▼</option>
+            <option value="upside">Upside ▼</option>
+            <option value="cagr5">CAGR 5yr ▼</option>
+            <option value="name">Name A-Z</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Priority action alerts -->
+      <div id="si-alerts" style="display:none;margin-bottom:16px"></div>
+
+      <!-- Main table -->
+      <div class="card" style="padding:0;overflow:hidden">
+        <div id="si-table-loading" style="text-align:center;padding:40px;color:var(--text3)">
+          <div style="font-size:24px;margin-bottom:8px">📊</div>
+          Loading stock intelligence…
+        </div>
+        <div id="si-table-wrap" style="display:none;overflow-x:auto">
+          <table id="si-table" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:var(--surface2);text-align:left">
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">TICKER</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">SIGNAL</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">UPSIDE</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">5YR CAGR</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">NEXT ER</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px">VERDICT</th>
+                <th style="padding:10px 14px;font-weight:600;color:var(--text3);font-size:11px;letter-spacing:0.5px"></th>
+              </tr>
+            </thead>
+            <tbody id="si-tbody"></tbody>
+          </table>
+        </div>
+        <div id="si-empty" style="display:none;text-align:center;padding:40px">
+          <div style="font-size:36px;margin-bottom:8px">📈</div>
+          <div style="font-weight:600;margin-bottom:6px">No tickers tracked yet</div>
+          <div style="font-size:13px;color:var(--text3);margin-bottom:16px">Search for a ticker above to get started</div>
+          <button class="btn btn-gold" onclick="document.getElementById('si-search').focus()">+ Add First Ticker</button>
+        </div>
+      </div>
+
+      <!-- AI Recommendations Panel -->
+      <div id="si-ai-panel" style="display:none;margin-top:20px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div>
+              <div style="font-weight:600;font-size:15px">🤖 AI Portfolio Recommendations</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px">Based on your portfolio gaps, risk profile &amp; diversification</div>
+            </div>
+            <button class="btn btn-sm" onclick="document.getElementById('si-ai-panel').style.display='none'" style="background:none;border:none;color:var(--text3);font-size:18px">×</button>
+          </div>
+          <div id="si-ai-content"><div style="text-align:center;padding:20px;color:var(--text3)">Loading AI recommendations…</div></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── STOCK INTELLIGENCE: TICKER PANEL (slide-in) ────────────────────── -->
+    <div id="si-ticker-panel" style="display:none;position:fixed;top:0;right:0;width:460px;max-width:96vw;height:100vh;background:var(--surface);border-left:1px solid var(--border);z-index:300;overflow-y:auto;box-shadow:-4px 0 24px rgba(0,0,0,0.3)">
+      <div style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <div style="font-family:var(--font-display);font-size:22px;font-weight:700" id="sp-ticker-title">—</div>
+            <div style="font-size:13px;color:var(--text3)" id="sp-ticker-name">—</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" onclick="siEditResearch(siCurrentTicker)" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)">✏️ Edit</button>
+            <button onclick="document.getElementById('si-ticker-panel').style.display='none'" style="background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer">×</button>
+          </div>
+        </div>
+        <div id="sp-content"><div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div></div>
+      </div>
+    </div>
+    <div id="si-panel-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:299" onclick="siClosePanel()"></div>
+
+    <!-- ── STOCK INTELLIGENCE: RESEARCH FORM MODAL ────────────────────────── -->
+    <div id="si-research-modal" class="modal-overlay" style="display:none">
+      <div class="modal-box" style="max-width:500px;width:96%">
+        <div class="modal-header">
+          <div class="modal-title" id="si-form-title">Add Research</div>
+          <button class="modal-close" onclick="document.getElementById('si-research-modal').style.display='none'">×</button>
+        </div>
+        <div style="padding:20px">
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
+            <div class="form-group">
+              <label class="form-label">Ticker *</label>
+              <input id="si-form-ticker" class="form-input" placeholder="NVDA" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Company Name</label>
+              <input id="si-form-name" class="form-input" placeholder="NVIDIA Corp (auto-fetched)">
+            </div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Auto-fetch live data from Yahoo Finance (free, no API key needed)</div>
+            <button class="btn btn-gold btn-sm" onclick="siFetchLive()" id="si-fetch-btn">🔄 Fetch Live Data</button>
+            <span id="si-fetch-status" style="font-size:12px;color:var(--text3);margin-left:10px"></span>
+          </div>
+          <div id="si-fetched-preview" style="display:none;background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;line-height:1.8">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Your Notes / Conviction</label>
+            <textarea id="si-form-notes" class="form-input" rows="2" placeholder="Why you like or dislike this stock…" style="resize:vertical"></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+            <div class="form-group">
+              <label class="form-label">Profit Target £</label>
+              <input id="si-form-target" class="form-input" type="number" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Stop Loss £</label>
+              <input id="si-form-stop" class="form-input" type="number" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Re-entry Low £</label>
+              <input id="si-form-reentry" class="form-input" type="number" placeholder="0">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label class="form-label">
+              <input type="checkbox" id="si-form-watchlist" style="margin-right:6px">
+              Add to Watchlist
+            </label>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn" onclick="document.getElementById('si-research-modal').style.display='none'" style="background:var(--surface2);border:1px solid var(--border);color:var(--text2)">Cancel</button>
+            <button class="btn btn-gold" onclick="siSaveResearch()">Save &amp; Track</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TRADING SIGNALS ──────────────────────────────────────────────── -->
+    <div id="section-signals" class="section">
+
+      <!-- Header bar -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+        <div>
+          <div style="font-family:var(--font-display);font-size:26px;font-weight:600">⚡ Trading Signals</div>
+          <div style="color:var(--text3);font-size:13px;margin-top:3px">Technical entry/exit signals with position sizing</div>
+          <!-- Universe selector chips -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px" id="sigs-universe-chips">
+            <span style="font-size:11px;color:var(--text3);align-self:center;margin-right:2px">Scan:</span>
+            <button onclick="sigsSetUniverse('personal')" id="sigs-u-personal" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">Portfolio</button>
+            <button onclick="sigsSetUniverse('nasdaq100')" id="sigs-u-nasdaq100" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">Nasdaq 100</button>
+            <button onclick="sigsSetUniverse('sp500')" id="sigs-u-sp500" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">S&amp;P 500</button>
+            <button onclick="sigsSetUniverse('ftse100')" id="sigs-u-ftse100" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">FTSE 100</button>
+            <button onclick="sigsSetUniverse('crypto')" id="sigs-u-crypto" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">Crypto</button>
+            <button onclick="sigsSetUniverse('global')" id="sigs-u-global" class="sigs-u-chip"
+              style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s">🌐 Global</button>
+          </div>
+          <!-- Scan progress bar (shown while scanning) -->
+          <div id="sigs-progress-wrap" style="display:none;margin-top:8px;max-width:360px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span id="sigs-progress-label" style="font-size:11px;color:var(--text3)">Scanning…</span>
+              <span id="sigs-progress-pct" style="font-size:11px;color:var(--text3)">0%</span>
+            </div>
+            <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden">
+              <div id="sigs-progress-bar" style="height:100%;width:0%;background:var(--gold);border-radius:2px;transition:width .3s"></div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <!-- Practice / Live toggle -->
+          <div style="display:flex;background:var(--surface2);border-radius:8px;padding:2px;gap:2px">
+            <button id="sig-trade-live" class="btn btn-sm" onclick="sigsSetTradingMode('live')"
+              style="border-radius:6px;padding:5px 12px;font-size:12px;background:var(--teal);color:#000;border:none">💰 Live</button>
+            <button id="sig-trade-practice" class="btn btn-sm" onclick="sigsSetTradingMode('practice')"
+              style="border-radius:6px;padding:5px 12px;font-size:12px;background:transparent;color:var(--text2);border:none">🎮 Practice</button>
+          </div>
+          <!-- B / C mode toggle -->
+          <div style="display:flex;background:var(--surface2);border-radius:8px;padding:2px;gap:2px">
+            <button id="sig-mode-b" class="btn btn-sm" onclick="sigsSetMode('B')"
+              style="border-radius:6px;padding:5px 14px;font-size:12px;background:var(--gold);color:#000;border:none">B-Mode</button>
+            <button id="sig-mode-c" class="btn btn-sm" onclick="sigsSetMode('C')"
+              style="border-radius:6px;padding:5px 14px;font-size:12px;background:transparent;color:var(--text2);border:none">C-Mode</button>
+          </div>
+          <button id="sigs-test-btn" class="btn btn-sm" onclick="sigsTestDataFetch()"
+            title="Test if Yahoo Finance data is reachable from the server"
+            style="font-size:11px;padding:5px 10px;background:transparent;border:1px solid var(--border);color:var(--text3)">
+            Test Data
+          </button>
+          <button class="btn btn-sm" onclick="sigsRefresh()" id="sigs-refresh-btn"
+            style="display:flex;gap:6px;align-items:center">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Scan
+          </button>
+        </div>
+      </div>
+
+      <!-- Paper trading banner (shown in practice mode) -->
+      <div id="sigs-paper-banner" style="display:none;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;align-items:center;gap:12px">
+        <span style="font-size:22px">🎮</span>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--gold)">Paper Trading Mode</div>
+          <div style="font-size:11px;color:var(--text3)">Trades execute on your T212 Practice account — no real money at risk.</div>
+        </div>
+      </div>
+
+      <!-- Status cards row -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px" id="sigs-status-cards">
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Market Regime</div>
+          <div id="sigs-regime-label" style="font-size:16px;font-weight:600;font-family:var(--font-display)">—</div>
+          <div id="sigs-regime-detail" style="font-size:11px;color:var(--text3);margin-top:3px">Loading…</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Open Positions</div>
+          <div id="sigs-open-count" style="font-size:16px;font-weight:600;font-family:var(--font-mono)">—</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px" id="sigs-open-sub">of 4 max</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Portfolio Heat</div>
+          <div id="sigs-heat" style="font-size:16px;font-weight:600;font-family:var(--font-mono)">—</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Max 10% risk</div>
+        </div>
+        <div class="card" style="padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Active Signals</div>
+          <div id="sigs-active-count" style="font-size:16px;font-weight:600;font-family:var(--font-mono)">—</div>
+          <div id="sigs-active-sub" style="font-size:11px;color:var(--text3);margin-top:3px">strength ≥ 60%</div>
+        </div>
+      </div>
+
+      <!-- Active signals list -->
+      <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+        <span>Active Signals</span>
+        <span id="sigs-scan-time" style="font-size:11px;font-weight:400;color:var(--text3);font-family:var(--font-body)"></span>
+      </div>
+      <div id="sigs-signals-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:40px">
+          Click <b>Scan</b> to generate signals
+        </div>
+      </div>
+
+      <!-- Scan Log -->
+      <div id="sigs-log-section" style="margin-bottom:28px;display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-family:var(--font-display);font-size:16px;font-weight:600">Scan Log</div>
+          <div id="sigs-log-summary" style="font-size:12px;color:var(--text3)"></div>
+        </div>
+        <!-- Summary stat pills -->
+        <div id="sigs-log-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+        <!-- Per-ticker grid -->
+        <div id="sigs-log-grid" style="display:flex;flex-wrap:wrap;gap:6px;max-height:260px;overflow-y:auto;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px"></div>
+        <!-- No-data detail list (only shown if any tickers failed to download) -->
+        <div id="sigs-log-nodata" style="margin-top:10px;display:none">
+          <div style="font-size:11px;color:var(--rose);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">⚠ Tickers with no price data</div>
+          <div id="sigs-log-nodata-list" style="font-size:12px;color:var(--text3);line-height:1.8"></div>
+        </div>
+      </div>
+
+      <!-- Open positions -->
+      <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px">Open Positions</div>
+      <div id="sigs-positions-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
+        <div style="color:var(--text3);font-size:13px;padding:16px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">No open positions</div>
+      </div>
+
+      <!-- C-mode additional panels -->
+      <div id="signals-c-mode" style="display:none">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px">Intraday Signals (1H)</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;text-align:center;color:var(--text3);margin-bottom:20px">
+          <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom:8px;opacity:.4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div style="font-size:13px">Intraday signals use 1H timeframe data — scanning on demand</div>
+          <button class="btn btn-sm" onclick="sigsRefreshIntraday()" style="margin-top:12px">Scan 1H Signals</button>
+        </div>
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px">Options Scanner</div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;text-align:center;color:var(--text3);margin-bottom:28px">
+          <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom:8px;opacity:.4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <div style="font-size:13px">Options chain integration — coming soon</div>
+        </div>
+      </div>
+
+      <!-- ── Backtest Engine ──────────────────────────────────────────────── -->
+      <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <span>📊 Backtest Engine <span style="font-size:12px;font-weight:400;color:var(--text3);font-family:var(--font-body)">(10-year walk-forward)</span></span>
+        <span id="bt-last-ran" style="font-size:11px;font-weight:400;color:var(--text3);font-family:var(--font-body)"></span>
+      </div>
+      <div class="card" style="padding:20px;margin-bottom:28px">
+        <!-- Ticker selector -->
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Select tickers to backtest:</div>
+        <div id="bt-ticker-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+          <span style="font-size:12px;color:var(--text3)">Run a signal scan first to populate tickers</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-sm" style="background:var(--gold);color:#000;font-weight:600" onclick="sigsRunBacktest()" id="bt-run-btn">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;vertical-align:middle"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Run Backtest
+          </button>
+          <!-- Progress bar (shown while running) -->
+          <div id="bt-progress-wrap" style="display:none;flex:1;min-width:180px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+              <span id="bt-progress-label" style="font-size:11px;color:var(--text3)">Starting…</span>
+              <span id="bt-progress-pct" style="font-size:11px;color:var(--text3)">0%</span>
+            </div>
+            <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden">
+              <div id="bt-progress-bar" style="height:100%;width:0%;background:var(--gold);border-radius:2px;transition:width .4s ease"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results (hidden until backtest runs) -->
+        <div id="bt-results" style="display:none">
+          <div style="border-top:1px solid var(--border);margin:18px 0 14px"></div>
+          <!-- Stats grid -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px" id="bt-stats-grid"></div>
+          <!-- Equity curve -->
+          <div style="margin-bottom:18px">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500">Portfolio equity curve (normalised, all tickers combined)</div>
+            <div style="height:190px;position:relative"><canvas id="bt-equity-chart"></canvas></div>
+          </div>
+          <!-- Per-ticker summary -->
+          <div id="bt-per-ticker" style="margin-bottom:16px"></div>
+          <!-- Per-signal-type table -->
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500">By signal type</div>
+          <div id="bt-sig-table"></div>
+        </div>
+
+        <div id="bt-empty" style="color:var(--text3);font-size:13px;text-align:center;padding:18px 0">
+          Select tickers and run a 10-year walk-forward backtest to validate strategy edge
+        </div>
+      </div>
+
+      <!-- Trade History / Performance (shown once ≥5 closed trades) -->
+      <div id="sigs-perf-section" style="display:none">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+          <span>Performance</span>
+          <button class="btn btn-sm" onclick="sigsTogglePerf()" id="sigs-perf-toggle">Hide</button>
+        </div>
+        <div id="sigs-perf-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px" id="sigs-perf-kpis"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px" id="sigs-perf-charts-row">
+            <div class="card" style="padding:16px">
+              <div style="font-size:12px;color:var(--text3);margin-bottom:10px;font-weight:600">P&L Over Time</div>
+              <canvas id="sigs-pnl-chart" height="160"></canvas>
+            </div>
+            <div class="card" style="padding:16px">
+              <div style="font-size:12px;color:var(--text3);margin-bottom:10px;font-weight:600">Monthly Breakdown</div>
+              <canvas id="sigs-monthly-chart" height="160"></canvas>
+            </div>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -2381,6 +2843,82 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         </div>
       </div>
 
+      <!-- Trading 212 Integration -->
+      <div class="card" id="t212-settings-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="card-label">📈 Trading 212 Live Sync</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:3px">Connect one or more T212 accounts — ISA, Invest, or Practice</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="t212-sync-all-btn-settings" onclick="t212SyncAll()" style="display:none" class="btn btn-sm" style="background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25)">🔄 Sync All</button>
+          </div>
+        </div>
+
+        <!-- Connected accounts list -->
+        <div id="t212-connections-list" style="margin-bottom:12px"></div>
+
+        <!-- Add account toggle -->
+        <div style="display:flex;gap:8px;margin-bottom:4px">
+          <button class="btn btn-ghost btn-sm" onclick="t212ToggleAddForm()" id="t212-add-btn">+ Add Account</button>
+        </div>
+
+        <!-- Add account form (hidden by default) -->
+        <div id="t212-add-form" style="display:none;margin-top:12px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.05em">Connect New Account</div>
+
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;padding:8px 10px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:8px">
+            💡 T212 → Settings → API (Beta) → Generate key. You get a <strong>Key</strong> + <strong>Secret</strong> (secret shown once — copy it now).
+            <a href="https://app.trading212.com/en/settings" target="_blank" rel="noopener" style="color:var(--gold);margin-left:4px">Open T212 →</a>
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label">Account name</label>
+            <input class="form-input" id="t212-new-name" type="text" placeholder="e.g. ISA Account, Practice">
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label">API Key</label>
+            <input class="form-input" id="t212-new-key" type="password" placeholder="Paste API key">
+          </div>
+
+          <div class="form-group" style="margin-bottom:8px">
+            <label class="form-label">API Secret <span style="font-weight:400;color:var(--rose);font-size:11px">(shown once only)</span></label>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="t212-new-secret" type="password" placeholder="Paste API secret" style="flex:1">
+              <button class="btn btn-ghost btn-sm" onclick="t212TestNew()" style="white-space:nowrap">Test</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            <span class="form-label" style="margin:0">Account type</span>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-bucket" value="isa" checked> Stocks &amp; Shares ISA
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-bucket" value="stocks"> Invest (non-ISA)
+            </label>
+          </div>
+
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+            <span class="form-label" style="margin:0">Mode</span>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-mode" value="live" checked> Live account
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input type="radio" name="t212-new-mode" value="demo"> Practice account
+            </label>
+          </div>
+
+          <div id="t212-new-test-result" style="display:none;margin-bottom:10px;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid transparent"></div>
+
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-gold btn-sm" onclick="t212SaveNewConnection()">Save &amp; Connect</button>
+            <button class="btn btn-ghost btn-sm" onclick="t212ToggleAddForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Demo Mode -->
       <div class="card">
         <div class="card-label" style="margin-bottom:10px">Demo Mode</div>
@@ -2693,8 +3231,10 @@ const sectionTitles = {
   overview:'Overview', networth:'Net Worth', forecast:'12-Month Forecast', retirement:'Retirement Planner',
   transactions:'Transactions', accounts:'Accounts', investments:'Investments', mortgage:'Mortgage & Debt',
   receipts:'Receipts', tax:'Tax Strategy', estate:'Estate & Legacy',
-  ai:'AI Advisor', settings:'Settings'
+  ai:'AI Advisor', settings:'Settings', intelligence:'Stock Intelligence',
+  signals:'Trading Signals'
 };
+
 function nav(id, el) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -2712,6 +3252,7 @@ function nav(id, el) {
   if (location.hash !== '#' + id) {
     history.replaceState(null, '', '#' + id);
   }
+  if (id === 'signals') renderSignals();
 }
 
 function restoreNav() {
@@ -2832,6 +3373,7 @@ function renderAll() {
   renderSettings();
   renderTaxStrategy();
   renderEstate();
+  renderIntelligence();
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────
@@ -3225,6 +3767,7 @@ function renderTransactions(txns) {
     const futureCls = t.is_future ? 'future-row' : '';
     const mortBadge = t.is_mortgage_txn ? `<span style="font-size:9px;background:rgba(139,92,246,0.12);color:#8B5CF6;padding:1px 5px;border-radius:3px;margin-left:4px">MORTGAGE TAB</span>` : '';
     return `<tr class="${futureCls}" style="${t.is_mortgage_txn?'opacity:0.5':''}">
+      <td style="padding:8px 4px 8px 14px;width:28px"><input type="checkbox" class="txn-cb" data-id="${t.id}" style="accent-color:var(--gold);cursor:pointer" onchange="toggleTxnSelect('${t.id}',this.checked)"></td>
       <td style="color:var(--text3);font-size:12px;white-space:nowrap">${t.date||'—'}</td>
       <td>
         <div style="font-weight:500">${t.description||'—'}${mortBadge}</div>
@@ -3281,11 +3824,14 @@ function renderAccounts() {
   } else {
     grid.innerHTML = offline.map(a => {
       const s = accMap[a.id] || { total_in:0, total_out:0, txn_count:0 };
-      return `<div class="account-card">
+      return `<div class="account-card" id="acc-card-${a.id}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div class="account-name">${maskAccount(a.name)}</div>
-            <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <input type="checkbox" class="acc-cb" data-id="${a.id}" style="accent-color:var(--gold);cursor:pointer;margin-top:3px;flex-shrink:0" onchange="toggleAccSelect('${a.id}',this.checked)">
+            <div>
+              <div class="account-name">${maskAccount(a.name)}</div>
+              <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
+            </div>
           </div>
           <div style="display:flex;gap:4px">
             <button class="action-btn" onclick="deleteAccountTxns('${a.id}','${esc(maskAccount(a.name))}')" title="Delete all transactions">🗑</button>
@@ -3396,7 +3942,11 @@ function renderInvestments() {
   const empty = (msg) => `<div style="color:var(--text3);font-size:12px;padding:8px 0;text-align:center">${msg}</div>`;
 
   document.getElementById('isa-list').innerHTML = isa.length
-    ? isa.map(s => holdingRow(s,'isa')).join('') : empty('No ISA holdings yet');
+    ? isa.map(s => holdingRow(s,'isa')).join('')
+    : `<div style="color:var(--text3);font-size:12px;padding:12px 0;text-align:center;line-height:1.6">
+        No ISA holdings yet.<br>
+        <span style="font-size:11px">Go to <a href="#" onclick="showSection('settings');return false" style="color:var(--gold)">Settings → Trading 212</a> to connect your account &amp; sync.</span>
+       </div>`;
   document.getElementById('crypto-list').innerHTML = crypto.length
     ? crypto.map(s => holdingRow(s,'crypto')).join('') : empty('No crypto added yet');
   document.getElementById('rsu-list').innerHTML = rsu.length
@@ -3428,7 +3978,9 @@ function renderInvestments() {
   renderCAGR();
   renderAllocation();
   renderPortfolioAnalytics();
+  renderPortfolioKPIStrip();
   renderDividendSummary();
+  renderEventsCalendar();
   renderDisposals();
   renderIncomeTax();
   renderAllowances();
@@ -6091,6 +6643,10 @@ function renderReturnsTable() {
   const el = document.getElementById('pa-returns-table');
   if (!el) return;
 
+  // Build score lookup from SI data
+  const siScoreMap = {};
+  (SI.scores || []).forEach(s => { if (s.ticker) siScoreMap[s.ticker.toUpperCase()] = s; });
+
   let html = `<table style="width:100%;font-size:12px;border-collapse:collapse">
     <thead><tr style="border-bottom:1px solid var(--border)">
       <th style="text-align:left;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Holding</th>
@@ -6098,6 +6654,7 @@ function renderReturnsTable() {
       <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Current Value</th>
       <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Capital Gain</th>
       <th style="text-align:right;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Allocation</th>
+      <th style="text-align:center;padding:7px 8px;color:var(--text3);font-weight:500;white-space:nowrap">Signal</th>
     </tr></thead><tbody>`;
 
   for (const h of filtered) {
@@ -6105,6 +6662,24 @@ function renderReturnsTable() {
     const alloc = (h.val / totalVal * 100);
     const bCol  = PA_BUCKET_COLORS[h.bucket] || '#666';
     const bLbl  = PA_BUCKET_LABELS[h.bucket] || h.bucket;
+
+    // Signal score badge
+    const siData = h.ticker ? siScoreMap[h.ticker.toUpperCase()] : null;
+    let signalHtml;
+    if (siData && siData.composite != null) {
+      const vs = siVerdictStyle(siData.verdict);
+      signalHtml = `<div style="text-align:center;cursor:pointer" onclick="nav('intelligence',document.querySelector('.nav-item[onclick*=intelligence]'));setTimeout(()=>siOpenPanel('${h.ticker}'),300)">
+        <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:${vs.color}">${siData.composite}</div>
+        <div style="font-size:9px;color:${vs.color};white-space:nowrap">${siData.verdict}</div>
+      </div>`;
+    } else if (h.ticker) {
+      signalHtml = `<div style="text-align:center;cursor:pointer" onclick="nav('intelligence',document.querySelector('.nav-item[onclick*=intelligence]'));setTimeout(()=>siEditResearch('${h.ticker}'),300)" title="Click to add research data">
+        <div style="font-size:10px;color:var(--text3)">+ Score</div>
+      </div>`;
+    } else {
+      signalHtml = `<span style="color:var(--text3)">—</span>`;
+    }
+
     html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">
       <td style="padding:7px 8px">
         <div style="font-weight:500">${h.name}</div>
@@ -6128,9 +6703,10 @@ function renderReturnsTable() {
           <div style="height:3px;border-radius:2px;background:${bCol};width:${Math.min(alloc*4,100)}%"></div>
         </div>
       </td>
+      <td style="padding:7px 8px">${signalHtml}</td>
     </tr>`;
   }
-  if (!filtered.length) html += `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">No holdings found</td></tr>`;
+  if (!filtered.length) html += `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text3)">No holdings found</td></tr>`;
   html += '</tbody></table>';
   el.innerHTML = html;
 }
@@ -6189,10 +6765,13 @@ function toggleBulkSelect(type, id) {
 }
 
 function updateBulkUI() {
-  const btn = document.getElementById('bulk-delete-btn');
-  const count = document.getElementById('bulk-select-count');
-  if (btn) btn.style.display = bulkSelected.size > 0 ? '' : 'none';
-  if (count) count.textContent = bulkSelected.size > 0 ? `${bulkSelected.size} selected` : '';
+  const btn    = document.getElementById('bulk-delete-btn');
+  const count  = document.getElementById('bulk-select-count');
+  const desBtn = document.getElementById('inv-deselect-btn');
+  const n = bulkSelected.size;
+  if (btn)    btn.style.display    = n > 0 ? '' : 'none';
+  if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
 }
 
 async function bulkDeleteSelected() {
@@ -6212,6 +6791,126 @@ async function bulkDeleteSelected() {
   bulkSelected.clear();
   updateBulkUI();
   toast('Holdings deleted ✓');
+  await load();
+}
+
+function selectAllInvestments() {
+  document.querySelectorAll('.holding-row input[type="checkbox"]').forEach(cb => {
+    if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+  });
+  const desBtn = document.getElementById('inv-deselect-btn');
+  if (desBtn) desBtn.style.display = '';
+}
+
+function deselectAllInvestments() {
+  document.querySelectorAll('.holding-row input[type="checkbox"]').forEach(cb => {
+    if (cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
+  });
+  bulkSelected.clear();
+  updateBulkUI();
+  const desBtn = document.getElementById('inv-deselect-btn');
+  if (desBtn) desBtn.style.display = 'none';
+}
+
+// ── Transaction bulk select ────────────────────────────────────────────────────
+let txnSelected = new Set();
+
+function toggleTxnSelect(id, checked) {
+  checked ? txnSelected.add(id) : txnSelected.delete(id);
+  updateTxnBulkUI();
+}
+
+function updateTxnBulkUI() {
+  const btn    = document.getElementById('txn-bulk-delete-btn');
+  const count  = document.getElementById('txn-bulk-count');
+  const desBtn = document.getElementById('txn-deselect-btn');
+  const n = txnSelected.size;
+  if (btn)    btn.style.display    = n > 0 ? '' : 'none';
+  if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
+}
+
+function txnSelectAllChange(masterCb) {
+  const checked = masterCb.checked;
+  document.querySelectorAll('.txn-cb').forEach(cb => {
+    cb.checked = checked;
+    const id = cb.dataset.id;
+    checked ? txnSelected.add(id) : txnSelected.delete(id);
+  });
+  updateTxnBulkUI();
+}
+
+function selectAllTxns() {
+  document.querySelectorAll('.txn-cb').forEach(cb => { cb.checked = true; txnSelected.add(cb.dataset.id); });
+  const master = document.getElementById('txn-select-all-cb');
+  if (master) master.checked = true;
+  updateTxnBulkUI();
+}
+
+function deselectAllTxns() {
+  txnSelected.clear();
+  document.querySelectorAll('.txn-cb').forEach(cb => { cb.checked = false; });
+  const master = document.getElementById('txn-select-all-cb');
+  if (master) master.checked = false;
+  updateTxnBulkUI();
+}
+
+async function bulkDeleteTxns() {
+  if (!txnSelected.size) return;
+  if (!confirm(`Permanently delete ${txnSelected.size} transaction(s)? This cannot be undone.`)) return;
+  const ids = [...txnSelected];
+  await fetch('/api/transactions/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+    body: JSON.stringify({ ids })
+  });
+  txnSelected.clear();
+  updateTxnBulkUI();
+  toast(`${ids.length} transaction(s) deleted ✓`);
+  await load();
+}
+
+// ── Account bulk select ────────────────────────────────────────────────────────
+let accSelected = new Set();
+
+function toggleAccSelect(id, checked) {
+  checked ? accSelected.add(id) : accSelected.delete(id);
+  updateAccBulkUI();
+}
+
+function updateAccBulkUI() {
+  const btn    = document.getElementById('acc-bulk-delete-btn');
+  const count  = document.getElementById('acc-bulk-count');
+  const desBtn = document.getElementById('acc-deselect-btn');
+  const n = accSelected.size;
+  if (btn)    btn.style.display    = n > 0 ? '' : 'none';
+  if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
+}
+
+function selectAllAccounts() {
+  document.querySelectorAll('.acc-cb').forEach(cb => { cb.checked = true; accSelected.add(cb.dataset.id); });
+  updateAccBulkUI();
+}
+
+function deselectAllAccounts() {
+  accSelected.clear();
+  document.querySelectorAll('.acc-cb').forEach(cb => { cb.checked = false; });
+  updateAccBulkUI();
+}
+
+async function bulkDeleteAccounts() {
+  if (!accSelected.size) return;
+  if (!confirm(`Delete ${accSelected.size} account(s) and ALL their transactions? This cannot be undone.`)) return;
+  const ids = [...accSelected];
+  await fetch('/api/accounts/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+    body: JSON.stringify({ ids })
+  });
+  accSelected.clear();
+  updateAccBulkUI();
+  toast(`${ids.length} account(s) deleted ✓`);
   await load();
 }
 
@@ -8076,9 +8775,2121 @@ async function doAuth() {
     load();
     loadBanks();
     loadRecurring();
+    loadT212Status();
     setInterval(load, 300000); // refresh every 5 min
   }
 })();
+
+// ── Trading 212 Integration ────────────────────────────────────────────────
+
+let _t212Connections = [];
+
+async function loadT212Status() {
+  try {
+    const r = await fetch('/api/t212/status', { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') } });
+    const d = await r.json();
+    _t212Connections = d.connections || [];
+    _renderT212Connections();
+  } catch(e) { /* non-critical */ }
+}
+
+function _fmtSynced(ts) {
+  if (!ts) return 'Never synced';
+  return 'Synced ' + new Date(ts).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+function _renderT212Connections() {
+  const list   = document.getElementById('t212-connections-list');
+  const invBtn = document.getElementById('t212-sync-btn-inv');
+  const settBtn = document.getElementById('t212-sync-all-btn-settings');
+  const hasConns = _t212Connections.length > 0;
+
+  // Show/hide Sync All buttons + T212 live card
+  if (invBtn)  invBtn.style.display  = hasConns ? 'flex' : 'none';
+  if (settBtn) settBtn.style.display = hasConns ? ''     : 'none';
+  const liveCard = document.getElementById('t212-live-card');
+  if (liveCard) liveCard.style.display = hasConns ? '' : 'none';
+
+  // Update last synced in investments header
+  const latestSync = _t212Connections.reduce((max, c) => {
+    if (!c.last_synced) return max;
+    return (!max || c.last_synced > max) ? c.last_synced : max;
+  }, null);
+  const invSyncEl = document.getElementById('t212-last-synced-inv');
+  if (invSyncEl) invSyncEl.textContent = latestSync ? _fmtSynced(latestSync) : '';
+
+  if (!list) return;
+
+  if (!hasConns) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:10px 0">No accounts connected yet. Click "+ Add Account" to get started.</div>`;
+    return;
+  }
+
+  list.innerHTML = _t212Connections.map(c => {
+    const modeBadge = c.mode === 'demo'
+      ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.25);font-weight:600">DEMO</span>`
+      : `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(20,184,166,0.12);color:var(--teal);border:1px solid rgba(20,184,166,0.3);font-weight:600">LIVE</span>`;
+    const bucketLabel = (c.bucket || 'isa') === 'isa' ? 'ISA' : 'Invest';
+    const bucketColor = (c.bucket || 'isa') === 'isa' ? 'var(--gold)' : 'var(--lavender)';
+    const bucketBadge = `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(245,158,11,0.1);color:${bucketColor};border:1px solid rgba(245,158,11,0.2);font-weight:600">${bucketLabel}</span>`;
+    const toggleBucket = (c.bucket || 'isa') === 'isa' ? 'stocks' : 'isa';
+    const toggleLabel  = (c.bucket || 'isa') === 'isa' ? 'Switch to Invest' : 'Switch to ISA';
+    return `
+    <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface2)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:600;font-size:13px;color:var(--text);margin-bottom:3px">${c.name} ${modeBadge} ${bucketBadge}</div>
+          <div style="font-size:11px;color:var(--text3)">${_fmtSynced(c.last_synced)}</div>
+          <div id="t212-row-result-${c.id}" style="display:none;font-size:11px;margin-top:4px;padding:4px 8px;border-radius:6px;border:1px solid transparent"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212TestById('${c.id}')">Test</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212SyncById('${c.id}')">Sync</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212ChangeBucket('${c.id}','${toggleBucket}','${c.name.replace(/'/g,"\\'")}')">${toggleLabel}</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="t212RenameConnection('${c.id}','${c.name.replace(/'/g,"\\'")}')">Rename</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:var(--rose)" onclick="t212DeleteConnection('${c.id}','${c.name.replace(/'/g,"\\'")}')">Remove</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function t212ToggleAddForm() {
+  const form = document.getElementById('t212-add-form');
+  const btn  = document.getElementById('t212-add-btn');
+  if (!form) return;
+  const visible = form.style.display !== 'none';
+  form.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? '+ Add Account' : '− Cancel';
+}
+
+async function _t212ShowTestResult(elId, bodyObj) {
+  const res = document.getElementById(elId);
+  if (!res) return;
+  res.style.display = '';
+  res.style.background = 'var(--surface2)'; res.style.color = 'var(--text3)'; res.style.borderColor = 'transparent';
+  res.textContent = '⏳ Testing…';
+  try {
+    const r = await fetch('/api/t212/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+      body: JSON.stringify(bodyObj)
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    const c = d.cash || {};
+    res.style.background = 'rgba(20,184,166,0.08)'; res.style.color = 'var(--teal)'; res.style.borderColor = 'rgba(20,184,166,0.25)';
+    res.innerHTML = `✅ Connected · Cash: <strong>${fmtGBP(c.free||0)}</strong> · Invested: <strong>${fmtGBP(c.invested||0)}</strong>`;
+  } catch(e) {
+    res.style.background = 'rgba(239,68,68,0.08)'; res.style.color = 'var(--rose)'; res.style.borderColor = 'rgba(239,68,68,0.25)';
+    res.textContent = '❌ ' + e.message;
+  }
+}
+
+async function t212TestNew() {
+  const key    = document.getElementById('t212-new-key')?.value?.trim();
+  const secret = document.getElementById('t212-new-secret')?.value?.trim();
+  const mode   = document.querySelector('input[name="t212-new-mode"]:checked')?.value || 'live';
+  if (!key)    { toast('Enter API Key first', 'error'); return; }
+  if (!secret) { toast('Enter API Secret first', 'error'); return; }
+  await _t212ShowTestResult('t212-new-test-result', { api_key: key, api_secret: secret, mode });
+}
+
+async function t212TestById(id) {
+  await _t212ShowTestResult(`t212-row-result-${id}`, { id });
+}
+
+async function t212SaveNewConnection() {
+  const name   = document.getElementById('t212-new-name')?.value?.trim() || 'Account';
+  const key    = document.getElementById('t212-new-key')?.value?.trim();
+  const secret = document.getElementById('t212-new-secret')?.value?.trim();
+  const mode   = document.querySelector('input[name="t212-new-mode"]:checked')?.value || 'live';
+  const bucket = document.querySelector('input[name="t212-new-bucket"]:checked')?.value || 'isa';
+  if (!key)    { toast('Enter API Key', 'error'); return; }
+  if (!secret) { toast('Enter API Secret', 'error'); return; }
+  const r = await fetch('/api/t212/connections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+    body: JSON.stringify({ name, api_key: key, api_secret: secret, mode, bucket })
+  });
+  const d = await r.json();
+  if (d.error) { toast('Error: ' + d.error, 'error'); return; }
+  toast(`✅ ${name} connected`);
+  // Clear form and collapse it
+  ['t212-new-name','t212-new-key','t212-new-secret'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const res = document.getElementById('t212-new-test-result');
+  if (res) res.style.display = 'none';
+  t212ToggleAddForm();
+  await loadT212Status();
+}
+
+async function t212SyncById(id) {
+  toast('⏳ Syncing…');
+  try {
+    const r = await fetch('/api/t212/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+      body: JSON.stringify({ id })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    let smsg = `✅ Synced — ${d.added} new, ${d.updated} updated`;
+    if (d.removed) smsg += `, ${d.removed} removed`;
+    toast(smsg);
+    await loadT212Status();
+    load();
+  } catch(e) {
+    toast('Sync failed: ' + e.message, 'error');
+  }
+}
+
+async function t212SyncAll() {
+  const syncIcon = `<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+  const staticIcon = `<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+  const btnIds = ['t212-sync-btn-inv', 't212-sync-all-btn-settings'];
+  btnIds.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = true; b.style.opacity = '0.6'; } });
+  const invBtn = document.getElementById('t212-sync-btn-inv');
+  if (invBtn) invBtn.innerHTML = syncIcon + ' Syncing…';
+
+  try {
+    const r = await fetch('/api/t212/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+      body: JSON.stringify({})
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    let msg = `✅ T212 synced — ${d.added} new, ${d.updated} updated`;
+    if (d.removed) msg += `, ${d.removed} removed`;
+    if (d.dividends) msg += `, ${d.dividends} dividends`;
+    if (d.warnings?.length) msg += ` (${d.warnings.length} warning${d.warnings.length>1?'s':''})`;
+    toast(msg);
+    await loadT212Status();
+    load();
+  } catch(e) {
+    toast('T212 sync failed: ' + e.message, 'error');
+  } finally {
+    btnIds.forEach(id => { const b = document.getElementById(id); if (b) { b.disabled = false; b.style.opacity = ''; } });
+    if (invBtn) invBtn.innerHTML = staticIcon + ' Sync T212';
+  }
+}
+
+async function t212ChangeBucket(id, newBucket, name) {
+  const label = newBucket === 'isa' ? 'ISA' : 'Invest (non-ISA)';
+  if (!confirm(`Switch "${name}" to sync into the ${label} bucket?\nExisting synced holdings in the old bucket are kept — only new syncs will go to ${label}.`)) return;
+  await fetch(`/api/t212/connections/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+    body: JSON.stringify({ bucket: newBucket })
+  });
+  toast(`Switched to ${label} bucket ✓`);
+  await loadT212Status();
+}
+
+async function t212RenameConnection(id, currentName) {
+  const name = prompt('Rename account:', currentName);
+  if (!name || name.trim() === currentName) return;
+  await fetch(`/api/t212/connections/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+    body: JSON.stringify({ name: name.trim() })
+  });
+  await loadT212Status();
+}
+
+async function t212DeleteConnection(id, name) {
+  if (!confirm(`Remove "${name}" from your connected accounts? This won't delete any synced holdings.`)) return;
+  await fetch(`/api/t212/connections/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+  });
+  toast(`${name} removed`);
+  await loadT212Status();
+}
+
+// ── Portfolio KPI Strip ────────────────────────────────────────────────────
+
+function renderPortfolioKPIStrip() {
+  const el = document.getElementById('portfolio-kpi-strip');
+  if (!el || !D || !D.investments) return;
+  const all = (typeof _paAllHoldings === 'function') ? _paAllHoldings() : (_paHoldings || []);
+  if (!all.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+
+  const t             = D.totals || {};
+  const totalVal      = t.investments_gbp || 0;
+  const totalInvested = all.reduce((s, h) => s + h.invested, 0);
+  const totalGain     = all.reduce((s, h) => s + h.gain, 0);
+  const gainPct       = totalInvested > 0 ? (totalGain / totalInvested * 100) : 0;
+  const projIncome    = all.reduce((s, h) => s + h.projDivIncome, 0);
+  const yieldPct      = totalVal > 0 ? (projIncome / totalVal * 100) : 0;
+  const gainC         = totalGain >= 0 ? 'var(--teal)' : 'var(--rose)';
+
+  const pkv  = document.getElementById('pkpi-value');
+  const pkg  = document.getElementById('pkpi-gain');
+  const pkgp = document.getElementById('pkpi-gain-pct');
+  const pki  = document.getElementById('pkpi-income');
+  if (pkv)  pkv.innerHTML  = `<span class="pv">${fmtGBP(totalVal)}</span>`;
+  set('pkpi-invested', fmtGBP(totalInvested) + ' invested');
+  if (pkg)  { pkg.innerHTML  = `<span class="pv" style="color:${gainC}">${totalGain>=0?'+':''}${fmtGBP(totalGain)}</span>`; }
+  if (pkgp) { pkgp.textContent = `${gainPct>=0?'+':''}${gainPct.toFixed(1)}%`; pkgp.style.color = gainC; }
+  if (pki)  pki.innerHTML  = `<span class="pv">${fmtGBP(projIncome)}</span>`;
+  set('pkpi-yield',    yieldPct.toFixed(2) + '% yield/yr');
+  set('pkpi-holdings', all.length);
+}
+
+// ── T212 Live Summary ──────────────────────────────────────────────────────
+
+async function loadT212LiveSummary() {
+  const liveCard = document.getElementById('t212-live-card');
+  if (!liveCard) return;
+  if (!_t212Connections || !_t212Connections.length) { liveCard.style.display = 'none'; return; }
+  liveCard.style.display = '';
+
+  const content = document.getElementById('t212-live-content');
+  if (content) content.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:12px 0">Loading live data…</div>';
+
+  try {
+    const r = await fetch('/api/t212/live-summary', {
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+    });
+    const d = await r.json();
+    if (!content) return;
+    if (!d.connections || !d.connections.length) {
+      content.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:8px">No accounts configured</div>';
+      return;
+    }
+
+    let html = '';
+    for (const conn of d.connections) {
+      const bucketLabel = (conn.bucket || 'isa') === 'isa' ? 'ISA' : 'Invest';
+      const modeLabel   = conn.mode === 'demo' ? '🔵 Demo' : '🟢 Live';
+      html += `<div style="margin-bottom:12px;padding:12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:13px;font-weight:500">${conn.name}</span>
+        <span style="font-size:10px;color:var(--text3)">${bucketLabel} · ${modeLabel}</span>
+      </div>`;
+
+      if (conn.cash_error) {
+        html += `<div style="font-size:12px;color:var(--rose);padding:4px 0">${conn.cash_error}</div>`;
+      } else if (conn.cash) {
+        const c = conn.cash;
+        const pplC = c.ppl >= 0 ? 'var(--teal)' : 'var(--rose)';
+        const pplSign = c.ppl >= 0 ? '+' : '';
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:10px">
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">Cash Available</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px" class="privacy-blur">£${c.free.toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">Invested</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px" class="privacy-blur">£${c.invested.toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">Unrealised P&amp;L</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px;color:${pplC}" class="privacy-blur">${pplSign}£${Math.abs(c.ppl).toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;background:var(--surface);border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:var(--text3)">In Orders</div>
+            <div style="font-family:var(--font-display);font-size:15px;margin-top:3px" class="privacy-blur">£${c.blocked.toFixed(2)}</div>
+          </div>
+        </div>`;
+      }
+
+      if (conn.orders && conn.orders.length > 0) {
+        html += `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:500">Open Orders (${conn.orders.length})</div>
+        <div style="display:flex;flex-direction:column;gap:4px">`;
+        for (const o of conn.orders) {
+          const sideC = o.side === 'BUY' ? 'var(--teal)' : 'var(--rose)';
+          const price = o.limitPrice ?? o.stopPrice ?? null;
+          const pType = o.limitPrice != null ? 'LIMIT' : o.stopPrice != null ? 'STOP' : o.type;
+          html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--surface);border-radius:6px;font-size:11px">
+            <span style="color:${sideC};font-weight:600;min-width:34px">${o.side}</span>
+            <span style="font-weight:500">${o.ticker}</span>
+            <span style="color:var(--text3)">${o.quantity}×</span>
+            ${price != null ? `<span>@ £${parseFloat(price).toFixed(2)}</span>` : ''}
+            <span style="color:var(--text3);font-size:10px;background:var(--surface2);padding:1px 5px;border-radius:4px">${pType}</span>
+            <span style="color:var(--text3);margin-left:auto;font-size:10px">${o.creationTime || ''}</span>
+          </div>`;
+        }
+        html += `</div>`;
+      } else if (!conn.cash_error) {
+        html += `<div style="font-size:11px;color:var(--text3);margin-top:2px">No open orders</div>`;
+      }
+
+      html += `</div>`;
+    }
+    content.innerHTML = html;
+  } catch(e) {
+    if (content) content.innerHTML = `<div style="font-size:12px;color:var(--rose);padding:8px">Error: ${e.message}</div>`;
+  }
+}
+
+// ── Events Calendar ────────────────────────────────────────────────────────
+
+async function renderEventsCalendar() {
+  const el   = document.getElementById('events-calendar-content');
+  const card = document.getElementById('events-calendar-card');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/calendar', {
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+    });
+    const d = await r.json();
+    const events = d.events || [];
+
+    if (!events.length) { if (card) card.style.display = 'none'; return; }
+    if (card) card.style.display = '';
+
+    // Group by YYYY-MM
+    const byMonth = {};
+    for (const ev of events) {
+      const m = ev.date.slice(0, 7);
+      (byMonth[m] = byMonth[m] || []).push(ev);
+    }
+
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let html = '<div style="display:flex;flex-direction:column;gap:14px">';
+    for (const [month, evts] of Object.entries(byMonth)) {
+      const [y, m] = month.split('-');
+      html += `<div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px">${MON[parseInt(m)-1]} ${y}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">`;
+      for (const ev of evts) {
+        const day = ev.date.slice(8);
+        const isE = ev.type === 'earnings';
+        const col = isE ? '#F59E0B' : 'var(--teal)';
+        const bg  = isE ? 'rgba(245,158,11,0.1)' : 'rgba(20,184,166,0.1)';
+        const bdr = isE ? 'rgba(245,158,11,0.3)'  : 'rgba(20,184,166,0.3)';
+        const ico = isE ? '📢' : '💷';
+        const shortName = ev.name !== ev.ticker ? ev.name.split(' ').slice(0,2).join(' ') : '';
+        const yieldStr  = (!isE && ev.div_yield) ? `<span style="color:var(--text3);font-size:10px;margin-left:2px">${(ev.div_yield*100).toFixed(1)}% yield</span>` : '';
+        html += `<div style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:${bg};border:1px solid ${bdr};border-radius:8px;font-size:11px">
+          <span>${ico}</span>
+          <span style="color:var(--text3);font-size:10px;min-width:20px;text-align:center">${day}</span>
+          <span style="font-weight:500">${ev.ticker}</span>
+          ${shortName ? `<span style="color:var(--text3);font-size:10px">${shortName}</span>` : ''}
+          <span style="color:${col};font-size:10px;font-weight:500">${isE ? 'Earnings' : 'Ex-Div'}</span>
+          ${yieldStr}
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px">Calendar unavailable — add tickers to Stock Intelligence to enable</div>';
+    if (card) card.style.display = 'none';
+  }
+}
+
+// ── Stock Intelligence ─────────────────────────────────────────────────────
+
+let SI = { scores: [], research: {}, filter: 'all', currentTicker: null };
+window.siCurrentTicker = null;
+
+// Verdict config
+const SI_VERDICTS = {
+  'STRONG BUY': { color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  'BUY':        { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' },
+  'HOLD':       { color: '#facc15', bg: 'rgba(250,204,21,0.12)' },
+  'TRIM':       { color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
+  'REDUCE':     { color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+  'EXIT':       { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  'NO DATA':    { color: 'var(--text3)', bg: 'transparent' },
+};
+
+function siVerdictStyle(v) {
+  return SI_VERDICTS[v] || SI_VERDICTS['NO DATA'];
+}
+
+async function renderIntelligence() {
+  const wrap = document.getElementById('si-table-wrap');
+  const loading = document.getElementById('si-table-loading');
+  const empty = document.getElementById('si-empty');
+  if (!wrap) return;
+
+  loading.style.display = 'block';
+  wrap.style.display = 'none';
+  empty.style.display = 'none';
+
+  try {
+    const [scores, research] = await Promise.all([
+      fetch('/api/scores', {headers:{Authorization:'Bearer '+sessionStorage.getItem('wealth_token')}}).then(r=>r.json()),
+      fetch('/api/research-data', {headers:{Authorization:'Bearer '+sessionStorage.getItem('wealth_token')}}).then(r=>r.json()),
+    ]);
+    SI.scores = Array.isArray(scores) ? scores : [];
+    SI.research = research || {};
+
+    loading.style.display = 'none';
+    if (SI.scores.length === 0) {
+      empty.style.display = 'block';
+    } else {
+      wrap.style.display = 'block';
+      siRenderTable();
+    }
+    siRenderAlerts();
+    // Also refresh the Returns tab in Portfolio Analytics with score badges
+    if (typeof renderReturnsTable === 'function') renderReturnsTable();
+  } catch(e) {
+    loading.textContent = 'Error loading data. Try refreshing.';
+  }
+}
+
+// Determine if ticker is in portfolio
+function siIsPortfolio(ticker) {
+  if (!D || !D.investments) return false;
+  const t = ticker.toUpperCase();
+  for (const bucket of Object.values(D.investments)) {
+    if (Array.isArray(bucket) && bucket.some(h => (h.ticker||h.symbol||'').toUpperCase() === t)) return true;
+  }
+  return false;
+}
+
+function siGetPortfolioTickers() {
+  if (!D || !D.investments) return new Set();
+  const s = new Set();
+  for (const bucket of Object.values(D.investments)) {
+    if (Array.isArray(bucket)) bucket.forEach(h => { if(h.ticker||h.symbol) s.add((h.ticker||h.symbol).toUpperCase()); });
+  }
+  return s;
+}
+
+function siSetFilter(f, el) {
+  SI.filter = f;
+  document.querySelectorAll('#si-filter-bar .chip').forEach(c => c.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (f === 'ai') {
+    siLoadRecommendations();
+  }
+  siRenderTable();
+}
+
+function siRenderTable() {
+  const tbody = document.getElementById('si-tbody');
+  if (!tbody) return;
+
+  const sort = document.getElementById('si-sort')?.value || 'score';
+  const portfolioTickers = siGetPortfolioTickers();
+  const watchlist = (D && D.watchlist) || [];
+
+  let rows = [...SI.scores];
+
+  // Filter
+  if (SI.filter === 'portfolio') {
+    rows = rows.filter(r => portfolioTickers.has(r.ticker));
+  } else if (SI.filter === 'watchlist') {
+    rows = rows.filter(r => watchlist.includes(r.ticker));
+  }
+  // 'all' and 'ai' show all tracked tickers
+
+  // Sort
+  rows.sort((a, b) => {
+    if (sort === 'score') return (b.composite||0) - (a.composite||0);
+    if (sort === 'upside') return (b.upside_pct||0) - (a.upside_pct||0);
+    if (sort === 'cagr5') return (b.cagr_5yr||0) - (a.cagr_5yr||0);
+    if (sort === 'name') return (a.name||a.ticker).localeCompare(b.name||b.ticker);
+    return 0;
+  });
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3)">No tickers match this filter</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => {
+    const vs = siVerdictStyle(row.verdict);
+    const isOwned = portfolioTickers.has(row.ticker);
+    const isWatched = watchlist.includes(row.ticker);
+    const scoreBar = row.composite != null
+      ? `<div style="display:flex;align-items:center;gap:6px">
+           <div style="width:80px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+             <div style="width:${row.composite}%;height:100%;background:${vs.color};border-radius:3px"></div>
+           </div>
+           <span style="font-family:var(--font-display);font-weight:700;font-size:14px">${row.composite}</span>
+         </div>`
+      : `<span style="color:var(--text3);font-size:12px">No data</span>`;
+
+    const upside = row.upside_pct != null
+      ? `<span style="color:${row.upside_pct>=0?'var(--teal)':'var(--rose)'}">${row.upside_pct>=0?'+':''}${row.upside_pct.toFixed(1)}%</span>`
+      : `<span style="color:var(--text3)">—</span>`;
+
+    const cagr5 = row.cagr_5yr != null
+      ? `<span style="color:${row.cagr_5yr>=0?'var(--teal)':'var(--rose)'}">${row.cagr_5yr>=0?'+':''}${row.cagr_5yr.toFixed(0)}%/yr</span>`
+      : `<span style="color:var(--text3)">—</span>`;
+
+    let erStr = '—';
+    let erColor = 'var(--text3)';
+    if (row.next_earnings) {
+      const erDate = new Date(row.next_earnings);
+      const days = Math.round((erDate - new Date()) / 86400000);
+      erStr = days < 0 ? 'Past' : days === 0 ? 'Today ⚡' : days <= 14 ? `${days}d ⚡` : row.next_earnings.slice(5);
+      if (days >= 0 && days <= 14) erColor = '#fb923c';
+    }
+
+    const badges = [];
+    if (isOwned) badges.push(`<span style="font-size:9px;background:var(--gold-dim);color:var(--gold);border-radius:3px;padding:1px 5px">HELD</span>`);
+    if (isWatched) badges.push(`<span style="font-size:9px;background:rgba(20,184,166,0.1);color:var(--teal);border-radius:3px;padding:1px 5px">WATCH</span>`);
+    if (row.warnings && row.warnings.length > 0) badges.push(`<span style="font-size:9px;background:rgba(248,113,113,0.1);color:var(--rose);border-radius:3px;padding:1px 5px">⚠</span>`);
+    const sigBadge = typeof sigsGetBadgeForTicker === 'function' ? sigsGetBadgeForTicker(row.ticker) : '';
+
+    const verdictBadge = row.verdict !== 'NO DATA'
+      ? `<span style="background:${vs.bg};color:${vs.color};padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.5px">${row.verdict}</span>`
+      : `<span style="color:var(--text3);font-size:12px">—</span>`;
+
+    return `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="siOpenPanel('${row.ticker}')" class="si-row">
+      <td style="padding:10px 14px">
+        <div style="font-weight:700;font-size:13px">${row.ticker}${sigBadge}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.name||''}</div>
+        <div style="display:flex;gap:3px;margin-top:3px">${badges.join('')}</div>
+      </td>
+      <td style="padding:10px 14px">${scoreBar}</td>
+      <td style="padding:10px 14px;font-size:13px">${upside}</td>
+      <td style="padding:10px 14px;font-size:13px">${cagr5}</td>
+      <td style="padding:10px 14px;font-size:12px;color:${erColor}">${erStr}</td>
+      <td style="padding:10px 14px">${verdictBadge}</td>
+      <td style="padding:10px 14px;text-align:right">
+        <button onclick="event.stopPropagation();siEditResearch('${row.ticker}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px" title="Edit">✏️</button>
+        <button onclick="event.stopPropagation();siDeleteTicker('${row.ticker}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px" title="Remove">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Add hover effect
+  document.querySelectorAll('.si-row').forEach(r => {
+    r.addEventListener('mouseenter', function() { this.style.background = 'var(--surface2)'; });
+    r.addEventListener('mouseleave', function() { this.style.background = ''; });
+  });
+}
+
+function siRenderAlerts() {
+  const el = document.getElementById('si-alerts');
+  if (!el) return;
+  const alerts = [];
+  SI.scores.forEach(row => {
+    if (row.warnings && row.warnings.length > 0) {
+      row.warnings.forEach(w => {
+        alerts.push(`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(248,113,113,0.08);border-left:3px solid var(--rose);border-radius:4px;font-size:13px">
+          <span style="color:var(--rose)">⚠</span>
+          <strong>${row.ticker}</strong>: ${w}
+        </div>`);
+      });
+    }
+  });
+  if (alerts.length > 0) {
+    el.style.display = 'block';
+    el.innerHTML = `<div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:8px;letter-spacing:0.5px">PRIORITY ACTIONS</div>` + alerts.join('');
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── Add / Search ──────────────────────────────────────────────────────────────
+
+function siSearchInput() {
+  // Could add autocomplete here in future
+}
+
+async function siAddTicker() {
+  const ticker = document.getElementById('si-search')?.value?.trim().toUpperCase();
+  if (!ticker) return;
+  document.getElementById('si-search').value = '';
+  // Open research form pre-filled
+  siEditResearch(ticker);
+}
+
+function siEditResearch(ticker) {
+  window.siCurrentTicker = ticker;
+  const r = SI.research[ticker] || {};
+  document.getElementById('si-form-title').textContent = ticker ? `Research — ${ticker}` : 'Add Ticker';
+  document.getElementById('si-form-ticker').value = ticker || '';
+  document.getElementById('si-form-name').value = r.name || '';
+  document.getElementById('si-form-notes').value = r.notes || '';
+  document.getElementById('si-form-target').value = r.full_target_price || '';
+  document.getElementById('si-form-stop').value = r.stop_loss || '';
+  document.getElementById('si-form-reentry').value = r.reentry_low || '';
+  document.getElementById('si-form-watchlist').checked = (D.watchlist||[]).includes(ticker);
+  document.getElementById('si-fetch-status').textContent = '';
+  document.getElementById('si-fetched-preview').style.display = 'none';
+  document.getElementById('si-research-modal').style.display = 'flex';
+}
+
+async function siFetchLive() {
+  const ticker = document.getElementById('si-form-ticker').value.trim().toUpperCase();
+  if (!ticker) { toast('Enter a ticker first', 'error'); return; }
+  const btn = document.getElementById('si-fetch-btn');
+  const status = document.getElementById('si-fetch-status');
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+  status.textContent = 'Connecting to Yahoo Finance…';
+  try {
+    const res = await fetch(`/api/research-data/${ticker}/fetch?force=true`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Fetch failed');
+    // Populate form name
+    document.getElementById('si-form-name').value = data.name || ticker;
+    // Show preview
+    const score = data.score || {};
+    const lines = [];
+    if (data.current_price) lines.push(`💰 Price: ${data.currency||'$'}${data.current_price.toFixed(2)}`);
+    if (data.analyst_target) lines.push(`🎯 Target: ${data.analyst_target.toFixed(2)} (+${((data.analyst_target-data.current_price)/data.current_price*100).toFixed(1)}%)`);
+    if (data.pe) lines.push(`PE: ${data.pe.toFixed(1)}`);
+    if (data.beta) lines.push(`Beta: ${data.beta.toFixed(2)}`);
+    if (data.cagr_5yr) lines.push(`📈 5yr CAGR: ${data.cagr_5yr.toFixed(1)}%/yr`);
+    if (data.cagr_1yr) lines.push(`1yr: ${data.cagr_1yr.toFixed(1)}%`);
+    if (data.next_earnings) lines.push(`📅 Next ER: ${data.next_earnings}`);
+    if (score.verdict && score.verdict !== 'NO DATA') lines.push(`⚡ Signal: ${score.composite}/100 → ${score.verdict}`);
+    const prev = document.getElementById('si-fetched-preview');
+    prev.innerHTML = lines.map(l=>`<div>${l}</div>`).join('');
+    prev.style.display = 'block';
+    status.textContent = '✅ Data loaded';
+    // Cache locally
+    SI.research[ticker] = data;
+  } catch(e) {
+    status.textContent = `❌ ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Fetch Live Data';
+  }
+}
+
+async function siSaveResearch() {
+  const ticker = document.getElementById('si-form-ticker').value.trim().toUpperCase();
+  if (!ticker) { toast('Ticker is required', 'error'); return; }
+  const payload = {
+    name: document.getElementById('si-form-name').value.trim(),
+    notes: document.getElementById('si-form-notes').value.trim(),
+    full_target_price: parseFloat(document.getElementById('si-form-target').value) || null,
+    stop_loss: parseFloat(document.getElementById('si-form-stop').value) || null,
+    reentry_low: parseFloat(document.getElementById('si-form-reentry').value) || null,
+  };
+  try {
+    await fetch(`/api/research-data/${ticker}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') },
+      body: JSON.stringify(payload)
+    });
+    const addWatch = document.getElementById('si-form-watchlist').checked;
+    if (addWatch) {
+      await fetch(`/api/watchlist/${ticker}`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+      });
+    }
+    document.getElementById('si-research-modal').style.display = 'none';
+    toast(`${ticker} saved`, 'success');
+    renderIntelligence();
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+async function siDeleteTicker(ticker) {
+  if (!confirm(`Remove ${ticker} from Stock Intelligence?`)) return;
+  await fetch(`/api/research-data/${ticker}`, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+  });
+  toast(`${ticker} removed`);
+  renderIntelligence();
+}
+
+// ── Ticker Detail Panel ───────────────────────────────────────────────────────
+
+async function siOpenPanel(ticker) {
+  window.siCurrentTicker = ticker;
+  const panel = document.getElementById('si-ticker-panel');
+  const overlay = document.getElementById('si-panel-overlay');
+  const content = document.getElementById('sp-content');
+
+  document.getElementById('sp-ticker-title').textContent = ticker;
+  document.getElementById('sp-ticker-name').textContent = (SI.research[ticker]||{}).name || '…';
+  content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Loading…</div>';
+  panel.style.display = 'block';
+  overlay.style.display = 'block';
+
+  try {
+    // Fetch latest data for this ticker
+    const res = await fetch(`/api/research-data/${ticker}/fetch`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Fetch failed');
+
+    const r = data;
+    const score = data.score || {};
+    SI.research[ticker] = r;
+    document.getElementById('sp-ticker-name').textContent = r.name || ticker;
+
+    const vs = siVerdictStyle(score.verdict || 'NO DATA');
+    const portfolioTickers = siGetPortfolioTickers();
+    const isOwned = portfolioTickers.has(ticker);
+
+    // Holding data
+    let holdingHtml = '';
+    if (isOwned && D && D.investments) {
+      for (const [bucket, items] of Object.entries(D.investments)) {
+        const h = (items||[]).find(i => (i.ticker||'').toUpperCase() === ticker);
+        if (h) {
+          const cost = parseFloat(h.avg_price || h.vest_price || 0);
+          const cur = parseFloat(h.current_price || 0);
+          const gainPct = cost > 0 ? ((cur - cost) / cost * 100).toFixed(1) : null;
+          // CAGR calculation
+          const holdingCagr = score.holding_cagr;
+          holdingHtml = `
+            <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
+              <div style="font-weight:600;margin-bottom:6px;font-size:11px;letter-spacing:0.5px;color:var(--text3)">YOUR POSITION (${bucket.toUpperCase()})</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                <div><div style="color:var(--text3)">Cost</div><div style="font-weight:600">${cost ? '£'+cost.toFixed(2) : '—'}</div></div>
+                <div><div style="color:var(--text3)">Current</div><div style="font-weight:600">${cur ? '£'+cur.toFixed(2) : '—'}</div></div>
+                <div><div style="color:var(--text3)">Your Gain</div><div style="font-weight:600;color:${gainPct>=0?'var(--teal)':'var(--rose)'}">${gainPct ? (gainPct>=0?'+':'')+gainPct+'%' : '—'}</div></div>
+                ${holdingCagr != null ? `<div style="grid-column:span 3"><div style="color:var(--text3)">Your Annualised Return</div><div style="font-weight:600;color:${holdingCagr>=0?'var(--teal)':'var(--rose)'}">${holdingCagr>=0?'+':''}${holdingCagr}%/yr</div></div>` : ''}
+              </div>
+            </div>`;
+          break;
+        }
+      }
+    }
+
+    // Signal bars
+    function scoreLine(label, val) {
+      if (val == null) return '';
+      const vs2 = val >= 70 ? 'var(--teal)' : val >= 40 ? 'var(--gold)' : 'var(--rose)';
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px">
+        <div style="width:80px;color:var(--text3)">${label}</div>
+        <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="width:${val}%;height:100%;background:${vs2};border-radius:3px"></div></div>
+        <div style="width:28px;text-align:right;font-weight:600">${val}</div>
+      </div>`;
+    }
+
+    // Analyst bar
+    const sb = r.analyst_strong_buy||0, b = r.analyst_buy||0, h2 = r.analyst_hold||0, s = r.analyst_sell||0, ss = r.analyst_strong_sell||0;
+    const totalA = sb+b+h2+s+ss;
+    let analystBar = '';
+    if (totalA > 0) {
+      const pct = (n,c) => `<div style="height:100%;width:${(n/totalA*100).toFixed(0)}%;background:${c};display:inline-block"></div>`;
+      analystBar = `<div style="margin-bottom:10px">
+        <div style="height:8px;border-radius:4px;overflow:hidden;display:flex;margin-bottom:4px">
+          ${pct(sb,'#22c55e')}${pct(b,'#4ade80')}${pct(h2,'#facc15')}${pct(s,'#f87171')}${pct(ss,'#ef4444')}
+        </div>
+        <div style="font-size:11px;color:var(--text3)">STR BUY ${sb} · BUY ${b} · HOLD ${h2} · SELL ${s+ss} · Total ${totalA} analysts</div>
+        ${r.analyst_target ? `<div style="font-size:12px;margin-top:4px">Targets: <span style="color:var(--text3)">${r.analyst_low ? '£'+r.analyst_low.toFixed(0)+' low →' : ''}</span> <strong>£${r.analyst_target.toFixed(0)} avg</strong> ${r.analyst_high ? '<span style="color:var(--text3)">→ £'+r.analyst_high.toFixed(0)+' high</span>' : ''}</div>` : ''}
+      </div>`;
+    }
+
+    // News
+    const news = (r.news||[]).slice(0,5);
+    const newsHtml = news.length > 0
+      ? news.map(n => {
+          const icon = n.impact === 'bullish' ? '🟢' : n.impact === 'bearish' ? '🔴' : '🟡';
+          return `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px">
+            <span>${icon}</span>
+            <div>
+              <div style="line-height:1.4">${n.headline}</div>
+              <div style="color:var(--text3);margin-top:2px">${n.date}${n.source?' · '+n.source:''}</div>
+            </div>
+          </div>`;
+        }).join('')
+      : '<div style="color:var(--text3);font-size:12px;padding:8px 0">No news loaded</div>';
+
+    // Warnings
+    const warnHtml = (score.warnings||[]).map(w =>
+      `<div style="padding:6px 10px;background:rgba(248,113,113,0.08);border-radius:4px;font-size:12px;color:var(--rose);margin-bottom:4px">⚠ ${w}</div>`
+    ).join('');
+
+    // Profit guide
+    let profitHtml = '';
+    if (r.full_target_price || r.stop_loss || r.reentry_low) {
+      profitHtml = `
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">PROFIT GUIDE</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px">
+            ${r.full_target_price ? `<div><div style="color:var(--text3)">Target</div><div style="font-weight:600;color:var(--teal)">£${r.full_target_price}</div></div>` : ''}
+            ${r.stop_loss ? `<div><div style="color:var(--text3)">Stop Loss</div><div style="font-weight:600;color:var(--rose)">£${r.stop_loss}</div></div>` : ''}
+            ${r.reentry_low ? `<div><div style="color:var(--text3)">Re-entry</div><div style="font-weight:600;color:var(--gold)">£${r.reentry_low}</div></div>` : ''}
+          </div>
+        </div>`;
+    }
+
+    // CAGR track record
+    const cagrHtml = (r.cagr_1yr!=null||r.cagr_3yr!=null||r.cagr_5yr!=null||r.cagr_10yr!=null)
+      ? `<div style="margin-bottom:14px">
+           <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">TRACK RECORD (STOCK CAGR)</div>
+           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px">
+             ${[['1yr',r.cagr_1yr],['3yr',r.cagr_3yr],['5yr',r.cagr_5yr],['10yr',r.cagr_10yr]].map(([l,v])=>v!=null?`<div><div style="color:var(--text3)">${l}</div><div style="font-weight:600;color:${v>=0?'var(--teal)':'var(--rose)'}">${v>=0?'+':''}${v}%</div></div>`:'').join('')}
+           </div>
+           ${r.alpha_5yr!=null?`<div style="font-size:11px;color:var(--text3);margin-top:6px">vs S&P 500 (5yr): <span style="color:${r.alpha_5yr>=0?'var(--teal)':'var(--rose)'};font-weight:600">${r.alpha_5yr>=0?'+':''}${r.alpha_5yr}%/yr alpha</span></div>`:''}
+         </div>`
+      : '';
+
+    content.innerHTML = `
+      <!-- Score banner -->
+      <div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <div style="font-family:var(--font-display);font-size:36px;font-weight:700;color:${vs.color}">${score.composite != null ? score.composite : '—'}</div>
+          <div>
+            <div style="background:${vs.bg};color:${vs.color};padding:4px 12px;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:0.5px">${score.verdict||'NO DATA'}</div>
+            ${r.current_price ? `<div style="font-size:12px;color:var(--text3);margin-top:4px">£${r.current_price.toFixed(2)} ${r.analyst_target?'→ target £'+r.analyst_target.toFixed(2):''}${score.upside_pct!=null?' ('+(score.upside_pct>=0?'+':'')+score.upside_pct.toFixed(1)+'% upside)':''}</div>` : ''}
+          </div>
+        </div>
+        <!-- Score breakdown bars -->
+        <div style="background:var(--surface2);border-radius:8px;padding:12px">
+          ${scoreLine('Fundamental', score.fundamental)}
+          ${scoreLine('Technical', score.technical)}
+          ${scoreLine('Risk', score.risk)}
+          ${scoreLine('Momentum', score.momentum)}
+        </div>
+      </div>
+
+      ${warnHtml ? `<div style="margin-bottom:14px">${warnHtml}</div>` : ''}
+
+      ${holdingHtml}
+
+      ${(()=>{
+        // Inject active trading signal if one exists
+        const activeSig = SIGNALS && SIGNALS.signals && SIGNALS.signals.find(s => s.ticker.toUpperCase() === ticker.toUpperCase());
+        if (!activeSig) return '';
+        const isLong = activeSig.direction === 'long';
+        const bc = isLong ? 'var(--teal)' : 'var(--rose)';
+        const typeLabel = SIG_TYPE_LABELS[activeSig.signal_type] || activeSig.signal_type;
+        const rr = activeSig.entry_price > 0 && activeSig.stop_loss > 0
+          ? Math.abs((activeSig.target - activeSig.entry_price) / (activeSig.entry_price - activeSig.stop_loss)).toFixed(1)
+          : '—';
+        return `
+          <div style="margin-bottom:14px;border:1px solid ${bc};border-left:3px solid ${bc};border-radius:0 8px 8px 0;padding:12px;background:var(--surface2)">
+            <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">ACTIVE TRADING SIGNAL ⚡</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="color:${bc};font-weight:700;font-size:12px">${activeSig.direction.toUpperCase()}</span>
+                <span style="color:var(--text3);font-size:11px">${typeLabel}</span>
+              </div>
+              <span style="font-size:12px;font-weight:600;color:${sigsStrengthColor(activeSig.strength)}">${Math.round(activeSig.strength*100)}% strength</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:11px;margin-bottom:8px">
+              <div><div style="color:var(--text3)">Entry</div><div style="font-weight:600;font-family:var(--font-mono)">${activeSig.entry_price.toLocaleString(undefined,{maximumFractionDigits:4})}</div></div>
+              <div><div style="color:var(--rose)">Stop</div><div style="font-weight:600;font-family:var(--font-mono)">${activeSig.stop_loss.toLocaleString(undefined,{maximumFractionDigits:4})}</div></div>
+              <div><div style="color:var(--teal)">Target</div><div style="font-weight:600;font-family:var(--font-mono)">${activeSig.target.toLocaleString(undefined,{maximumFractionDigits:4})}</div></div>
+              <div><div style="color:var(--text3)">R:R</div><div style="font-weight:600;font-family:var(--font-mono)">${rr}R</div></div>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${activeSig.explanation||''}</div>
+            <button class="btn btn-gold btn-sm" onclick="sigsTakeTrade('${activeSig.id}')" style="font-size:11px">Take Trade</button>
+          </div>`;
+      })()}
+
+      ${cagrHtml}
+
+      <!-- Analyst Consensus -->
+      ${analystBar ? `<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">ANALYST CONSENSUS</div>${analystBar}</div>` : ''}
+
+      <!-- Earnings -->
+      ${r.next_earnings ? `
+        <div style="margin-bottom:14px;background:var(--surface2);border-radius:8px;padding:12px;font-size:12px">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:6px">EARNINGS</div>
+          <div>📅 ${r.next_earnings}${r.eps_estimate ? ' · EPS est: $'+r.eps_estimate.toFixed(2) : ''}${r.prev_eps ? ' (prev: $'+r.prev_eps.toFixed(2)+')' : ''}</div>
+          ${score.earnings_days!=null && score.earnings_days>=0 && score.earnings_days<=30 ? `<div style="color:#fb923c;margin-top:4px">⚡ ${score.earnings_days} days away — expect price movement</div>` : ''}
+        </div>` : ''}
+
+      <!-- Key metrics -->
+      ${[['PE',r.pe,'x'],['Fwd PE',r.fwd_pe,'x'],['PEG',r.peg,''],['Beta',r.beta,''],['Margin',r.margin,'%'],['ROE',r.roe,'%'],['Rev Growth',r.rev_growth,'%'],['D/E',r.debt_eq,'']].filter(([,v])=>v!=null).length > 0 ? `
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:8px">KEY METRICS</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${[['PE',r.pe,'x'],['Fwd PE',r.fwd_pe,'x'],['PEG',r.peg,''],['Beta',r.beta,''],['Margin',r.margin,'%'],['ROE',r.roe,'%'],['Rev Growth',r.rev_growth,'%'],['D/E',r.debt_eq,'']].filter(([,v])=>v!=null).map(([l,v,u])=>
+              `<div style="background:var(--surface2);border-radius:6px;padding:5px 10px;font-size:12px"><span style="color:var(--text3)">${l}: </span><strong>${typeof v==='number'?v.toFixed(v>10?0:1):v}${u}</strong></div>`
+            ).join('')}
+          </div>
+        </div>` : ''}
+
+      ${profitHtml}
+
+      <!-- News -->
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.5px;margin-bottom:6px">RECENT NEWS</div>
+        ${newsHtml}
+      </div>
+
+      <!-- Notes -->
+      ${r.notes ? `<div style="margin-bottom:14px;background:var(--surface2);border-radius:8px;padding:12px;font-size:13px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">YOUR NOTES</div>${r.notes}</div>` : ''}
+
+      <div style="font-size:10px;color:var(--text3);margin-top:8px">Updated: ${r.updated||'never'} · Data from Yahoo Finance</div>
+    `;
+  } catch(e) {
+    content.innerHTML = `<div style="color:var(--rose);padding:20px">Error: ${e.message}<br><br><button class="btn btn-sm" onclick="siEditResearch('${ticker}')">Edit manually</button></div>`;
+  }
+}
+
+function siClosePanel() {
+  document.getElementById('si-ticker-panel').style.display = 'none';
+  document.getElementById('si-panel-overlay').style.display = 'none';
+  window.siCurrentTicker = null;
+}
+
+// ── AI Recommendations ────────────────────────────────────────────────────────
+
+async function siLoadRecommendations() {
+  const panel = document.getElementById('si-ai-panel');
+  const content = document.getElementById('si-ai-content');
+  panel.style.display = 'block';
+  content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3)">⏳ Asking Claude to analyse your portfolio gaps…</div>';
+
+  // Scroll to panel
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const res = await fetch('/api/ai-recommendations', {
+      headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+    });
+    const recs = await res.json();
+    if (!res.ok) throw new Error(recs.error || 'AI error');
+    if (!Array.isArray(recs) || recs.length === 0) {
+      content.innerHTML = '<div style="color:var(--text3);padding:10px">No recommendations generated. Add more holdings to improve analysis.</div>';
+      return;
+    }
+    content.innerHTML = recs.map(rec => `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <span style="font-family:var(--font-display);font-size:18px;font-weight:700">${rec.ticker}</span>
+            <span style="font-size:13px;color:var(--text3);margin-left:8px">${rec.name||''}</span>
+          </div>
+          ${rec.score_estimate ? `<span style="background:rgba(20,184,166,0.1);color:var(--teal);padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600">~${rec.score_estimate}/100</span>` : ''}
+        </div>
+        ${rec.gap ? `<div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;letter-spacing:0.5px">GAP: ${rec.gap}</div>` : ''}
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">${rec.reason||''}</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" onclick="siEditResearch('${rec.ticker}')" style="background:var(--gold-dim);color:var(--gold);border:1px solid var(--gold)">+ Track</button>
+          <button class="btn btn-sm" onclick="siOpenPanel('${rec.ticker}')" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)">View Analysis</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    content.innerHTML = `<div style="color:var(--rose);padding:10px">Error: ${e.message}</div>`;
+  }
+}
+
+async function siRefreshAll() {
+  if (!confirm('Refresh all tickers from Yahoo Finance? This may take a minute.')) return;
+  toast('Refreshing all tickers…');
+  // Refresh each ticker sequentially
+  const tickers = Object.keys(SI.research);
+  for (const ticker of tickers) {
+    try {
+      await fetch(`/api/research-data/${ticker}/fetch?force=true`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token') }
+      });
+    } catch(e) { /* continue */ }
+  }
+  toast('Refresh complete');
+  renderIntelligence();
+}
+
+// ── Trading Signals ─────────────────────────────────────────────────────────
+
+const SIGNALS = {
+  signals:      [],
+  positions:    [],
+  regime:       {},
+  stats:        null,
+  trades:       [],
+  mode:         'B',
+  universe:     'global',
+  trading_mode: 'live',
+  scanning:     false,
+  _pollTimer:   null,
+  _pnlChart:    null,
+  _monthChart:  null,
+};
+
+const SIG_TYPE_LABELS = {
+  trend_pullback_long:      'Trend Pullback',
+  momentum_breakout_long:   'Momentum Breakout',
+  liquidity_sweep_long:     'Liquidity Sweep',
+  mean_reversion_long:      'Mean Reversion',
+  trend_continuation_short: 'Trend Continuation',
+  liquidity_sweep_short:    'Liquidity Sweep',
+  momentum_breakdown_short: 'Momentum Breakdown',
+};
+
+const ENGINE_LABELS = {
+  crypto_spot:  'Crypto Spot',
+  crypto_perps: 'Crypto Perps',
+  stock_cfds:   'Stock CFDs',
+  options:      'Options',
+  cash:         'Cash',
+};
+
+const REGIME_META = {
+  trending_up:   { label: 'Trending Up',   color: 'var(--teal)' },
+  trending_down: { label: 'Trending Down',  color: 'var(--rose)' },
+  ranging:       { label: 'Ranging',        color: 'var(--gold)' },
+  volatile:      { label: 'Volatile',       color: 'var(--rose)' },
+  unknown:       { label: 'Unknown',        color: 'var(--text3)' },
+};
+
+async function renderSignals() {
+  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+
+  _sigsPrewarm(); // fire-and-forget wake-up ping so server is warm before user clicks Scan
+
+  // Load saved config (universe + trading_mode)
+  try {
+    const rc = await fetch('/api/signals/config', {headers: hdrs});
+    if (rc.ok) {
+      const dc = await rc.json();
+      const cfg = dc.config || {};
+      SIGNALS.universe     = cfg.scan_universe || 'global';
+      SIGNALS.trading_mode = cfg.trading_mode  || 'live';
+    }
+  } catch(e) {}
+  sigsHighlightUniverseChip(SIGNALS.universe);
+  sigsSetTradingMode(SIGNALS.trading_mode);
+
+  await sigsLoadPositions();
+  await sigsLoadHistory();
+  sigsRenderPositions();
+  sigsRenderHistory();
+
+  // Load cached signals & regime
+  try {
+    const r = await fetch('/api/signals/scan-status', {headers: hdrs});
+    if (r.ok) {
+      const d = await r.json();
+      if (d.signals) SIGNALS.signals = d.signals;
+      if (d.regime)  SIGNALS.regime  = d.regime;
+      sigsRenderStatusCards();
+      sigsRenderSignalsList();
+      const st = d.scan || {};
+      if (st.last_ran) {
+        const el = document.getElementById('sigs-scan-time');
+        if (el) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
+      }
+    }
+  } catch(e) {}
+
+  // Load cached backtest results
+  try {
+    const rb = await fetch('/api/signals/backtest', {headers: hdrs});
+    if (rb.ok) {
+      const db = await rb.json();
+      if (db.results && db.results.stats) btRenderResults(db.results);
+    }
+  } catch(e) {}
+
+  // Populate backtest ticker chips from cached signals
+  btInitTickers();
+}
+
+// ── Universe selector ────────────────────────────────────────────────────────
+
+function sigsHighlightUniverseChip(key) {
+  document.querySelectorAll('.sigs-u-chip').forEach(el => {
+    const isActive = el.id === 'sigs-u-' + key;
+    el.style.background = isActive ? 'var(--gold)' : 'var(--surface2)';
+    el.style.color       = isActive ? '#000'        : 'var(--text2)';
+    el.style.borderColor = isActive ? 'var(--gold)'  : 'var(--border)';
+    el.style.fontWeight  = isActive ? '600'           : '400';
+  });
+}
+
+async function sigsSetUniverse(key) {
+  SIGNALS.universe = key;
+  sigsHighlightUniverseChip(key);
+  // Persist to backend config
+  try {
+    await fetch('/api/signals/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+      body: JSON.stringify({scan_universe: key})
+    });
+  } catch(e) {}
+  // Kick off a fresh scan with the new universe
+  sigsRefresh();
+}
+
+// ── Progress polling ─────────────────────────────────────────────────────────
+
+function _sigsShowProgress(state) {
+  const wrap = document.getElementById('sigs-progress-wrap');
+  const bar  = document.getElementById('sigs-progress-bar');
+  const lbl  = document.getElementById('sigs-progress-label');
+  const pct  = document.getElementById('sigs-progress-pct');
+  if (!wrap) return;
+  const total = state.total || 0;
+  const done  = state.done  || 0;
+  const frac  = total > 0 ? Math.min(done / total, 1) : 0;
+  const pctVal = Math.round(frac * 100);
+  wrap.style.display = 'block';
+  if (bar) bar.style.width = pctVal + '%';
+  if (lbl) lbl.textContent = total > 0
+    ? (done === 0 ? `Downloading data for ${total} tickers…` : `Analysing ${done}/${total} tickers…`)
+    : 'Starting scan…';
+  if (pct) pct.textContent = pctVal + '%';
+}
+
+function _sigsHideProgress() {
+  const wrap = document.getElementById('sigs-progress-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function _sigsBtnScanning() {
+  const btn = document.getElementById('sigs-refresh-btn');
+  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scanning…';
+}
+
+function _sigsBtnIdle() {
+  const btn = document.getElementById('sigs-refresh-btn');
+  if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Scan';
+}
+
+async function _sigsPollUntilDone() {
+  // Poll /api/signals/scan-status every 3 s until running=false.
+  // Fixes:
+  //   B3 — tolerate up to 5 consecutive network errors before giving up
+  //   B4 — hard 5-minute wall-clock timeout so we never loop forever if thread dies
+  const hdrs       = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  const TIMEOUT_MS = 5 * 60 * 1000;  // 5-min absolute ceiling
+  const MAX_FAILS  = 5;
+  const started    = Date.now();
+  let   failures   = 0;
+
+  while (Date.now() - started < TIMEOUT_MS) {
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const resp = await fetch('/api/signals/scan-status', {headers: hdrs});
+      if (!resp.ok) { failures++; if (failures >= MAX_FAILS) break; continue; }
+      failures = 0;  // reset counter on success
+
+      const d  = await resp.json();
+      const st = d.scan || {};
+
+      // Update progress bar while scan is running
+      if (st.running && (st.total > 0 || st.done > 0)) _sigsShowProgress(st);
+
+      // Render live scan log on every poll (shows per-ticker status as scan progresses)
+      if (d.log && d.log.length > 0) sigsRenderScanLog(d.log, st);
+
+      // Show any cached/partial signals immediately
+      if (d.signals && d.signals.length > 0) {
+        SIGNALS.signals = d.signals;
+        sigsRenderSignalsList();
+        sigsRenderStatusCards();
+      }
+      if (d.regime) SIGNALS.regime = d.regime;
+
+      if (!st.running) {
+        // Final definitive render
+        if (d.signals) SIGNALS.signals = d.signals;
+        if (d.log)     sigsRenderScanLog(d.log, st);
+        const el = document.getElementById('sigs-scan-time');
+        if (el && st.last_ran) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
+        sigsRenderSignalsList();
+        sigsRenderStatusCards();
+        break;
+      }
+    } catch(e) {
+      failures++;
+      if (failures >= MAX_FAILS) break;
+    }
+  }
+}
+
+// Retry delays covering Render free-tier cold start (can take up to 60 s)
+const _SIGS_RETRY_DELAYS = [8000, 15000, 20000, 20000];  // 63 s total
+
+async function _sigsFetch(url, retryDelays) {
+  retryDelays = retryDelays || _SIGS_RETRY_DELAYS;
+  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  const maxAttempts = retryDelays.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const r = await fetch(url, {headers: hdrs});
+      return r;  // success — caller checks r.ok
+    } catch(e) {
+      if (attempt === maxAttempts) throw e;
+      // Tick-down countdown while waiting to retry
+      const wait = retryDelays[attempt - 1];
+      const secs = Math.round(wait / 1000);
+      const lbl  = document.getElementById('sigs-progress-label');
+      const btn  = document.getElementById('sigs-refresh-btn');
+      if (btn) btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="animation:spin 1s linear infinite"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Waking up…';
+      for (let s = secs; s > 0; s--) {
+        if (lbl) lbl.textContent = `Server waking up — retrying in ${s}s (${attempt}/${maxAttempts - 1})…`;
+        await new Promise(res => setTimeout(res, 1000));
+      }
+    }
+  }
+}
+
+// Pre-warm: ping /api/health when Signals tab opens so the server is
+// already awake by the time the user clicks Scan.
+async function _sigsPrewarm() {
+  try {
+    await fetch('/api/health', {
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+    });
+  } catch(e) { /* silent — just a wake hint */ }
+}
+
+async function sigsRefresh() {
+  if (SIGNALS.scanning) return;
+  SIGNALS.scanning = true;
+  _sigsBtnScanning();
+  _sigsShowProgress({done: 0, total: 0});
+
+  try {
+    // Kick off background scan + get any already-cached signals immediately.
+    // _sigsFetch retries with countdown for Render free-tier cold starts.
+    const r = await _sigsFetch('/api/signals');
+    if (!r.ok) {
+      const errText = await r.text().catch(() => r.statusText);
+      throw new Error(errText || `HTTP ${r.status}`);
+    }
+    const d = await r.json();
+
+    // Render any already-cached signals while the fresh scan runs
+    if (d.signals) SIGNALS.signals = d.signals;
+    if (d.regime)  SIGNALS.regime  = d.regime;
+    sigsRenderSignalsList();
+    sigsRenderStatusCards();
+
+    // FIX B6: Always poll — don't gate on d.scan.running.
+    // Before the fix, running=True was set inside the background thread so the
+    // initial response always showed running=False, silently skipping polling.
+    // Now running=True is set before the thread starts (B1 fix), but we poll
+    // unconditionally here as an extra safety net.
+    _sigsShowProgress(d.scan || {});
+    await _sigsPollUntilDone();
+
+  } catch(e) {
+    const msg = e.message || String(e);
+    const isNetwork = msg.includes('fetch') || msg.includes('network') || msg.includes('Failed');
+    toast(
+      isNetwork
+        ? 'Could not reach server — it may be sleeping. Wait 30 s and try again.'
+        : 'Scan failed: ' + msg,
+      'error'
+    );
+  }
+
+  await sigsLoadPositions();
+  SIGNALS.scanning = false;
+  _sigsBtnIdle();
+  _sigsHideProgress();
+  sigsRenderAll();
+  // Populate backtest ticker chips from fresh signals
+  btInitTickers();
+}
+
+// ── Data connectivity diagnostic ──────────────────────────────────────────────
+async function sigsTestDataFetch() {
+  const btn = document.getElementById('sigs-test-btn');
+  if (btn) { btn.textContent = 'Testing…'; btn.disabled = true; }
+  try {
+    const r = await fetch('/api/signals/debug-fetch?ticker=AAPL', {
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast(`✓ Data OK — AAPL: ${d.rows} rows fetched in ${d.elapsed_s}s`, 'success');
+    } else {
+      const err = d.error || 'no data returned';
+      toast(`✗ Data fetch failed (${d.elapsed_s}s): ${err}`, 'error');
+    }
+  } catch(e) {
+    toast('✗ Connectivity test failed: ' + (e.message || String(e)), 'error');
+  } finally {
+    if (btn) { btn.textContent = 'Test Data'; btn.disabled = false; }
+  }
+}
+
+async function sigsLoadPositions() {
+  try {
+    const r = await fetch('/api/signals/positions', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
+    if (r.ok) { const d = await r.json(); SIGNALS.positions = d.positions || []; }
+  } catch(e) {}
+}
+
+async function sigsLoadHistory() {
+  try {
+    const r = await fetch('/api/signals/history', {headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')}});
+    if (r.ok) { const d = await r.json(); SIGNALS.trades = d.trades || []; SIGNALS.stats = d.stats; }
+  } catch(e) {}
+}
+
+function sigsRenderAll() {
+  sigsRenderStatusCards();
+  sigsRenderSignalsList();
+  sigsRenderPositions();
+  sigsRenderHistory();
+}
+
+// ── Scan Log ──────────────────────────────────────────────────────────────────
+function sigsRenderScanLog(log, scan) {
+  if (!log || !log.length) return;
+
+  const section  = document.getElementById('sigs-log-section');
+  const grid     = document.getElementById('sigs-log-grid');
+  const statsEl  = document.getElementById('sigs-log-stats');
+  const summEl   = document.getElementById('sigs-log-summary');
+  const nodataEl = document.getElementById('sigs-log-nodata');
+  const nodataList = document.getElementById('sigs-log-nodata-list');
+  if (!section || !grid) return;
+
+  section.style.display = 'block';
+
+  // Count by status
+  const counts = {signal: 0, no_signal: 0, no_data: 0, error: 0, pending: 0, fetching: 0, timeout: 0};
+  log.forEach(e => { counts[e.status] = (counts[e.status] || 0) + 1; });
+  const total = log.length;
+  const done  = total - (counts.pending || 0) - (counts.fetching || 0);
+
+  // Summary line
+  const universe = (scan && scan.universe) ? scan.universe.toUpperCase().replace('_',' ') : '';
+  summEl.textContent = `${universe}  •  ${done}/${total} scanned`;
+
+  // Stat pills
+  const pills = [
+    { label: `⚡ ${counts.signal} signal${counts.signal !== 1 ? 's' : ''}`,  bg: 'rgba(20,184,166,.18)', color: 'var(--teal)' },
+    { label: `✓ ${counts.no_signal} no match`, bg: 'var(--surface2)', color: 'var(--text3)' },
+    { label: `✗ ${counts.no_data} no data`,    bg: 'rgba(251,113,133,.12)', color: 'var(--rose)', hide: counts.no_data === 0 },
+    { label: `⚠ ${counts.error} error${counts.error !== 1 ? 's' : ''}`,    bg: 'rgba(251,191,36,.12)', color: '#fbbf24',  hide: counts.error === 0 },
+    { label: `⏱ ${counts.timeout} timeout${counts.timeout !== 1 ? 's' : ''}`, bg: 'rgba(249,115,22,.12)', color: '#fb923c', hide: counts.timeout === 0 },
+    { label: `⟳ ${counts.fetching} fetching`, bg: 'rgba(59,130,246,.10)',  color: '#60a5fa',  hide: counts.fetching === 0 },
+  ];
+  statsEl.innerHTML = pills.filter(p => !p.hide).map(p =>
+    `<span style="background:${p.bg};color:${p.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600">${p.label}</span>`
+  ).join('');
+
+  // Per-ticker pill grid
+  const STATUS_STYLE = {
+    signal:    { bg: 'rgba(20,184,166,.20)', border: 'rgba(20,184,166,.4)',  color: 'var(--teal)',  icon: '⚡' },
+    no_signal: { bg: 'var(--surface2)',       border: 'var(--border)',        color: 'var(--text3)', icon: '' },
+    no_data:   { bg: 'rgba(251,113,133,.12)', border: 'rgba(251,113,133,.3)', color: 'var(--rose)',  icon: '✗' },
+    error:     { bg: 'rgba(251,191,36,.10)',  border: 'rgba(251,191,36,.3)',  color: '#fbbf24',      icon: '⚠' },
+    pending:   { bg: 'var(--surface2)',       border: 'var(--border)',        color: 'var(--text3)', icon: '…' },
+    fetching:  { bg: 'rgba(59,130,246,.10)',  border: 'rgba(59,130,246,.3)', color: '#60a5fa',      icon: '⟳' },
+    timeout:   { bg: 'rgba(249,115,22,.12)',  border: 'rgba(249,115,22,.3)', color: '#fb923c',      icon: '⏱' },
+  };
+
+  grid.innerHTML = log.map(e => {
+    const st = STATUS_STYLE[e.status] || STATUS_STYLE.pending;
+    const tip = e.msg ? e.msg.replace(/"/g, '&quot;') : '';
+    return `<span title="${tip}" style="background:${st.bg};border:1px solid ${st.border};color:${st.color};
+      padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;cursor:default;white-space:nowrap">
+      ${st.icon ? st.icon + ' ' : ''}${e.ticker}
+    </span>`;
+  }).join('');
+
+  // Show no-data detail list if any tickers failed to download or timed out
+  const noDataTickers = log.filter(e => e.status === 'no_data' || e.status === 'error' || e.status === 'timeout');
+  if (noDataTickers.length > 0) {
+    nodataEl.style.display = 'block';
+    // If ALL tickers timed out, add a hint about data connectivity
+    const allTimeout = noDataTickers.length === total && counts.timeout === total;
+    nodataList.innerHTML = (allTimeout
+      ? `<div style="margin-bottom:8px;padding:8px 12px;background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.3);border-radius:6px;color:#fb923c;font-size:12px">
+           ⏱ All downloads timed out — Yahoo Finance may be unreachable from this server.
+           Click <b>Test Data</b> to diagnose.
+         </div>`
+      : '') +
+      noDataTickers.map(e =>
+        `<span style="margin-right:16px"><b style="color:var(--text2)">${e.ticker}</b>: ${e.msg}</span>`
+      ).join('');
+  } else {
+    nodataEl.style.display = 'none';
+  }
+}
+
+function sigsRenderStatusCards() {
+  const rm = REGIME_META[SIGNALS.regime.label] || REGIME_META.unknown;
+  const regEl = document.getElementById('sigs-regime-label');
+  if (regEl) {
+    regEl.textContent = rm.label;
+    regEl.style.color = rm.color;
+  }
+  const regDet = document.getElementById('sigs-regime-detail');
+  if (regDet) {
+    const adx = SIGNALS.regime.adx;
+    const spy = SIGNALS.regime.spy_price;
+    regDet.textContent = adx ? `ADX ${adx} · SPY $${spy||'—'}` : 'SPY proxy';
+  }
+
+  const pos = SIGNALS.positions.length;
+  const el2 = document.getElementById('sigs-open-count');
+  if (el2) el2.textContent = pos;
+
+  // Portfolio heat
+  const totalCap = 7500 + 3750 + 6250 + 5000 + 2500; // default capitals
+  const totalRisk = SIGNALS.positions.reduce((s,p) => s + (parseFloat(p.risk_amount)||0), 0);
+  const heat = totalCap > 0 ? totalRisk / totalCap * 100 : 0;
+  const hEl = document.getElementById('sigs-heat');
+  if (hEl) {
+    hEl.textContent = heat.toFixed(1) + '%';
+    hEl.style.color = heat > 8 ? 'var(--rose)' : heat > 6 ? 'var(--gold)' : 'var(--teal)';
+  }
+
+  const longs  = SIGNALS.signals.filter(s => s.direction === 'long').length;
+  const shorts = SIGNALS.signals.filter(s => s.direction === 'short').length;
+  const acEl = document.getElementById('sigs-active-count');
+  if (acEl) acEl.textContent = SIGNALS.signals.length;
+  const asSub = document.getElementById('sigs-active-sub');
+  if (asSub && SIGNALS.signals.length > 0) asSub.textContent = `${longs} long · ${shorts} short`;
+}
+
+function sigsStrengthColor(s) {
+  if (s >= 0.75) return 'var(--teal)';
+  if (s >= 0.60) return 'var(--gold)';
+  return 'var(--text3)';
+}
+
+function sigsRenderSignalsList() {
+  const el = document.getElementById('sigs-signals-list');
+  if (!el) return;
+  if (!SIGNALS.signals.length) {
+    const scanTime = document.getElementById('sigs-scan-time')?.textContent || '';
+    const hasScanned = scanTime.includes('Last scan');
+    el.innerHTML = hasScanned
+      ? `<div style="color:var(--text3);font-size:13px;text-align:center;padding:32px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:22px;margin-bottom:8px">🔍</div>
+          <div style="font-weight:600;color:var(--text2);margin-bottom:6px">No signals found above 60% strength</div>
+          <div style="font-size:12px;line-height:1.6">Market conditions may not currently favour any of the 7 signal types.<br>
+          Try a different <b>universe</b>, or check back when volatility/volume picks up.</div>
+         </div>`
+      : `<div style="color:var(--text3);font-size:13px;text-align:center;padding:32px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">
+          <div style="font-size:22px;margin-bottom:8px">⚡</div>
+          <div style="font-weight:600;color:var(--text2);margin-bottom:6px">No signals yet</div>
+          <div style="font-size:12px">Click <b>Scan</b> to search your selected universe</div>
+         </div>`;
+    return;
+  }
+  el.innerHTML = SIGNALS.signals.map(s => sigsRenderSignalCard(s)).join('');
+}
+
+function sigsRenderSignalCard(s) {
+  const isLong    = s.direction === 'long';
+  const bColor    = isLong ? 'var(--teal)' : 'var(--rose)';
+  const badgeBg   = isLong ? 'rgba(20,184,166,.18)' : 'rgba(251,113,133,.18)';
+  const badgeClr  = isLong ? 'var(--teal)' : 'var(--rose)';
+  const pct       = Math.round(s.strength * 100);
+  const typeLabel = SIG_TYPE_LABELS[s.signal_type] || s.signal_type;
+  const engLabel  = ENGINE_LABELS[s.engine] || s.engine;
+
+  const rr = s.entry_price > 0 && s.stop_loss > 0
+    ? Math.abs((s.target - s.entry_price) / (s.entry_price - s.stop_loss)).toFixed(1)
+    : '—';
+
+  const conflictBadge = s.analyst_conflict
+    ? `<span style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.3);padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600">⚠ vs Analysts</span>`
+    : '';
+
+  return `<div style="background:var(--surface);border:1px solid ${s.analyst_conflict ? 'rgba(251,191,36,.3)' : 'var(--border)'};border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:16px 18px;position:relative">
+    <!-- Header row -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:17px;font-weight:700;font-family:var(--font-display)">${s.ticker}</span>
+        <span style="background:${badgeBg};color:${badgeClr};padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:.05em">${s.direction.toUpperCase()}</span>
+        <span style="background:var(--surface2);color:var(--text2);padding:2px 8px;border-radius:8px;font-size:11px">${typeLabel}</span>
+        <span style="background:var(--surface2);color:var(--text3);padding:2px 8px;border-radius:8px;font-size:11px">${engLabel}</span>
+        ${conflictBadge}
+      </div>
+      <!-- Strength bar -->
+      <div style="display:flex;align-items:center;gap:8px;min-width:140px">
+        <div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${sigsStrengthColor(s.strength)};border-radius:3px"></div>
+        </div>
+        <span style="font-size:12px;font-weight:700;color:${sigsStrengthColor(s.strength)};font-family:var(--font-mono);min-width:32px">${pct}%</span>
+      </div>
+    </div>
+    <!-- 5-column data grid -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;background:var(--surface2);border-radius:8px;padding:10px 12px">
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Entry</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono)">${s.entry_price.toLocaleString(undefined,{maximumFractionDigits:4})}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--rose);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Stop</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:var(--rose)">${s.stop_loss.toLocaleString(undefined,{maximumFractionDigits:4})}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--teal);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Target</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:var(--teal)">${s.target.toLocaleString(undefined,{maximumFractionDigits:4})}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Size</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono)">${typeof s.position_size === 'number' ? s.position_size.toFixed(4) : s.position_size}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Risk · R:R</div>
+        <div style="font-size:13px;font-weight:600;font-family:var(--font-mono)">£${(s.risk_amount||0).toFixed(0)} · ${rr}R</div>
+      </div>
+    </div>
+    <!-- Explanation -->
+    <div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:14px">${s.explanation || ''}</div>
+    <!-- Action buttons -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" onclick="sigsTakeTrade('${s.id}')">Take Trade</button>
+      <button class="btn btn-sm" onclick="nav('intelligence',document.querySelector('.nav-item[onclick*=intelligence]'));setTimeout(()=>siOpenPanel('${s.ticker}'),350)"
+        style="display:flex;gap:5px;align-items:center">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        View Research
+      </button>
+      <button class="btn btn-sm" onclick="sigsPlaceOrder('${s.id}')" title="Execute via Trading 212"
+        style="display:flex;gap:5px;align-items:center">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        Execute T212
+      </button>
+    </div>
+  </div>`;
+}
+
+function sigsRenderPositions() {
+  const el = document.getElementById('sigs-positions-list');
+  if (!el) return;
+  if (!SIGNALS.positions.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:16px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">No open positions</div>';
+    return;
+  }
+  el.innerHTML = SIGNALS.positions.map(p => {
+    const isLong = p.direction === 'long';
+    const bColor = isLong ? 'var(--teal)' : 'var(--rose)';
+    const cur    = parseFloat(p.current_price) || parseFloat(p.entry_price);
+    const entry  = parseFloat(p.entry_price) || 0;
+    const size   = parseFloat(p.size) || 0;
+    const pnl    = isLong ? (cur - entry) * size : (entry - cur) * size;
+    const origStop = parseFloat(p.original_stop || p.current_stop || entry);
+    const stopDist = Math.abs(entry - origStop) || entry * 0.02;
+    const rMult  = stopDist > 0 ? (isLong ? (cur - entry) : (entry - cur)) / stopDist : 0;
+    const pnlClr = pnl >= 0 ? 'var(--teal)' : 'var(--rose)';
+    const typeLabel = SIG_TYPE_LABELS[p.signal_type] || p.signal_type || '';
+    const paperBadge = p.paper ? `<span style="font-size:10px;background:rgba(251,191,36,.15);color:var(--gold);border:1px solid rgba(251,191,36,.3);border-radius:4px;padding:1px 6px">🎮 Paper</span>` : '';
+
+    return `<div style="background:var(--surface);border:1px solid ${p.paper ? 'rgba(251,191,36,.3)' : 'var(--border)'};border-left:3px solid ${bColor};border-radius:0 10px 10px 0;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:15px;font-weight:700;font-family:var(--font-display)">${p.ticker}</span>
+          <span style="font-size:11px;color:${bColor};font-weight:700">${p.direction.toUpperCase()}</span>
+          <span style="font-size:11px;color:var(--text3)">${typeLabel}</span>
+          ${paperBadge}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:${pnlClr}">
+            ${pnl >= 0 ? '+' : ''}£${Math.abs(pnl).toFixed(2)} (${rMult.toFixed(2)}R)
+          </span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;font-size:12px;background:var(--surface2);border-radius:7px;padding:8px 12px;margin-bottom:10px">
+        <div><span style="color:var(--text3)">Entry </span><span style="font-family:var(--font-mono)">${entry.toLocaleString(undefined,{maximumFractionDigits:4})}</span></div>
+        <div><span style="color:var(--text3)">Stop </span><span style="font-family:var(--font-mono);color:var(--rose)">${parseFloat(p.current_stop).toLocaleString(undefined,{maximumFractionDigits:4})}</span></div>
+        <div><span style="color:var(--text3)">Target </span><span style="font-family:var(--font-mono);color:var(--teal)">${parseFloat(p.target).toLocaleString(undefined,{maximumFractionDigits:4})}</span></div>
+        <div><span style="color:var(--text3)">Date </span><span style="font-family:var(--font-mono)">${p.entry_date||'—'}</span></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="sigsShowCloseModal('${p.id}','${p.ticker}')">Close Position</button>
+        <button class="btn btn-sm" onclick="sigsShowStopModal('${p.id}',${parseFloat(p.current_stop)})">Update Stop</button>
+        <button class="btn btn-sm" onclick="sigsPlaceCloseOrder('${p.id}')" title="Close via T212">
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Close via T212
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function sigsTakeTrade(sigId) {
+  const sig = SIGNALS.signals.find(s => s.id === sigId);
+  if (!sig) return;
+  if (!confirm(`Take ${sig.direction.toUpperCase()} trade on ${sig.ticker}?\nEntry: ${sig.entry_price}  Stop: ${sig.stop_loss}  Target: ${sig.target}\nRisk: £${(sig.risk_amount||0).toFixed(2)}`)) return;
+
+  try {
+    const r = await fetch(`/api/signals/take/${sigId}`, {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({trading_mode: SIGNALS.trading_mode || 'live'}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
+    SIGNALS.signals = SIGNALS.signals.filter(s => s.id !== sigId);
+    SIGNALS.positions.push(d.position);
+    toast(`Position opened: ${sig.direction.toUpperCase()} ${sig.ticker} @ ${sig.entry_price}`);
+    sigsRenderAll();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function sigsShowCloseModal(posId, ticker) {
+  const pos = SIGNALS.positions.find(p => p.id === posId);
+  const cur  = pos?.current_price || pos?.entry_price || '';
+  const exitP = prompt(`Close position: ${ticker}\nEnter exit price:`, cur);
+  if (!exitP || isNaN(parseFloat(exitP))) return;
+  sigsClosePosition(posId, parseFloat(exitP));
+}
+
+async function sigsClosePosition(posId, exitPrice) {
+  try {
+    const r = await fetch(`/api/signals/close/${posId}`, {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({exit_price: exitPrice}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
+    const trade = d.trade;
+    const pnl   = trade.pnl || 0;
+    const rMult = d.r_multiple || 0;
+    SIGNALS.positions = SIGNALS.positions.filter(p => p.id !== posId);
+    SIGNALS.trades.push(trade);
+    toast(`Closed ${trade.ticker}: ${pnl >= 0 ? '+' : ''}£${Math.abs(pnl).toFixed(2)} (${rMult.toFixed(2)}R)`, pnl >= 0 ? 'success' : 'error');
+    await sigsLoadHistory();
+    sigsRenderAll();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function sigsShowStopModal(posId, currentStop) {
+  const newStop = prompt(`New stop loss price:`, currentStop);
+  if (!newStop || isNaN(parseFloat(newStop))) return;
+  sigsUpdateStop(posId, parseFloat(newStop));
+}
+
+async function sigsUpdateStop(posId, newStop) {
+  try {
+    const r = await fetch(`/api/signals/update-stop/${posId}`, {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({stop: newStop}),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'error'); return; }
+    const p = SIGNALS.positions.find(x => x.id === posId);
+    if (p) p.current_stop = newStop;
+    toast(`Stop updated to ${newStop}`);
+    sigsRenderPositions();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function sigsPlaceOrder(sigId) {
+  const sig = SIGNALS.signals.find(s => s.id === sigId);
+  if (!sig) return;
+  const confirmed = confirm(
+    `Execute ${sig.direction.toUpperCase()} order on T212?\n` +
+    `Ticker: ${sig.ticker}\nQty: ${(sig.position_size||0).toFixed(4)}\nEntry: ${sig.entry_price}\n\n` +
+    `⚠️ This places a real order. Continue?`
+  );
+  if (!confirmed) return;
+  try {
+    const r = await fetch('/api/signals/place-order', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({
+        ticker: sig.ticker,
+        direction: sig.direction,
+        order_type: 'limit',
+        quantity: sig.position_size,
+        limit_price: sig.entry_price,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('T212 order failed: ' + (d.error||'Unknown error'), 'error'); return; }
+    toast(`Order placed on T212: ${sig.direction.toUpperCase()} ${sig.ticker} (T212: ${d.t212_ticker})`);
+    // Also log locally
+    await sigsTakeTrade(sigId);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function sigsPlaceCloseOrder(posId) {
+  const pos = SIGNALS.positions.find(p => p.id === posId);
+  if (!pos) return;
+  const cur = pos.current_price || pos.entry_price;
+  const confirmed = confirm(
+    `Close position on T212?\nTicker: ${pos.ticker}\nApprox price: ${cur}\n\n⚠️ Places real order. Continue?`
+  );
+  if (!confirmed) return;
+  try {
+    const r = await fetch('/api/signals/place-order', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'), 'Content-Type':'application/json'},
+      body: JSON.stringify({
+        ticker: pos.ticker,
+        direction: pos.direction === 'long' ? 'short' : 'long', // reverse to close
+        order_type: 'market',
+        quantity: pos.size,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('T212 close failed: ' + (d.error||'Unknown'), 'error'); return; }
+    toast(`Close order placed on T212 for ${pos.ticker}`);
+    // Also close locally
+    const exitP = parseFloat(cur) || parseFloat(pos.entry_price);
+    await sigsClosePosition(posId, exitP);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function sigsSetMode(m) {
+  SIGNALS.mode = m;
+  document.getElementById('sig-mode-b').style.background = m === 'B' ? 'var(--gold)' : 'transparent';
+  document.getElementById('sig-mode-b').style.color      = m === 'B' ? '#000' : 'var(--text2)';
+  document.getElementById('sig-mode-c').style.background = m === 'C' ? 'var(--gold)' : 'transparent';
+  document.getElementById('sig-mode-c').style.color      = m === 'C' ? '#000' : 'var(--text2)';
+  const cPanel = document.getElementById('signals-c-mode');
+  if (cPanel) cPanel.style.display = m === 'C' ? '' : 'none';
+  // Persist mode
+  fetch('/api/signals/config', {
+    method:'POST',
+    headers:{Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token'),'Content-Type':'application/json'},
+    body: JSON.stringify({mode: m}),
+  }).catch(()=>{});
+}
+
+async function sigsRefreshIntraday() {
+  toast('Intraday signal scan is not yet available in this build', 'info');
+}
+
+// ── Practice / Live toggle ───────────────────────────────────────────────────
+
+function sigsSetTradingMode(mode) {
+  SIGNALS.trading_mode = mode;
+  const liveBtn  = document.getElementById('sig-trade-live');
+  const pracBtn  = document.getElementById('sig-trade-practice');
+  const banner   = document.getElementById('sigs-paper-banner');
+  if (liveBtn) {
+    liveBtn.style.background = mode === 'live' ? 'var(--teal)' : 'transparent';
+    liveBtn.style.color      = mode === 'live' ? '#000' : 'var(--text2)';
+  }
+  if (pracBtn) {
+    pracBtn.style.background = mode === 'practice' ? 'var(--gold)' : 'transparent';
+    pracBtn.style.color      = mode === 'practice' ? '#000' : 'var(--text2)';
+  }
+  if (banner) banner.style.display = mode === 'practice' ? 'flex' : 'none';
+  // Persist to backend config
+  fetch('/api/signals/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+    body: JSON.stringify({trading_mode: mode}),
+  }).catch(() => {});
+}
+
+// ── Backtest Engine JS ───────────────────────────────────────────────────────
+
+let _btSelectedTickers = [];
+
+const BT_SIG_NAMES = {
+  trend_pullback_long:      'Trend Pullback',
+  momentum_breakout_long:   'Momentum Breakout',
+  liquidity_sweep_long:     'Liquidity Sweep ↑',
+  mean_reversion_long:      'Mean Reversion',
+  trend_continuation_short: 'Trend Continuation ↓',
+  liquidity_sweep_short:    'Liquidity Sweep ↓',
+  momentum_breakdown_short: 'Momentum Breakdown',
+};
+
+function btInitTickers() {
+  const available = [...new Set(SIGNALS.signals.map(s => s.ticker))];
+  // Pre-select all (up to 15)
+  _btSelectedTickers = available.slice(0, 15);
+  btRenderChips();
+}
+
+function btRenderChips() {
+  const el = document.getElementById('bt-ticker-chips');
+  if (!el) return;
+  const available = [...new Set([..._btSelectedTickers, ...SIGNALS.signals.map(s => s.ticker)])];
+  if (!available.length) {
+    el.innerHTML = '<span style="font-size:12px;color:var(--text3)">Run a signal scan first to populate tickers</span>';
+    return;
+  }
+  el.innerHTML = available.map(t => {
+    const sel = _btSelectedTickers.includes(t);
+    return `<button onclick="btToggleTicker('${t}')" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid ${sel ? 'var(--teal)' : 'var(--border)'};background:${sel ? 'rgba(20,184,166,.15)' : 'var(--surface2)'};color:${sel ? 'var(--teal)' : 'var(--text2)'};cursor:pointer;transition:all .15s;font-weight:${sel ? '600' : '400'}">${t}</button>`;
+  }).join('')
+  + `<button onclick="btAddTicker()" style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px dashed var(--border);background:transparent;color:var(--text3);cursor:pointer">+ Add</button>`;
+}
+
+function btToggleTicker(t) {
+  const i = _btSelectedTickers.indexOf(t);
+  if (i >= 0) { _btSelectedTickers.splice(i, 1); }
+  else { if (_btSelectedTickers.length >= 20) { toast('Max 20 tickers', 'warning'); return; } _btSelectedTickers.push(t); }
+  btRenderChips();
+}
+
+function btAddTicker() {
+  const t = prompt('Enter ticker (e.g. AAPL, BTC-USD, TSCO.L):');
+  if (!t) return;
+  const clean = t.trim().toUpperCase();
+  if (!_btSelectedTickers.includes(clean)) _btSelectedTickers.push(clean);
+  btRenderChips();
+}
+
+async function _btPollUntilDone() {
+  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  while (true) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const resp = await fetch('/api/signals/backtest-status', {headers: hdrs});
+      if (!resp.ok) break;
+      const d  = await resp.json();
+      const st = d.state || {};
+      const tot = st.total || 1; const done = st.done || 0;
+      const pct = Math.round(done / tot * 100);
+      const bar = document.getElementById('bt-progress-bar');
+      const lbl = document.getElementById('bt-progress-label');
+      const pe  = document.getElementById('bt-progress-pct');
+      if (bar) bar.style.width = pct + '%';
+      if (lbl) lbl.textContent = `Backtesting ${done}/${tot} tickers…`;
+      if (pe)  pe.textContent  = pct + '%';
+      if (!st.running) {
+        if (d.results) btRenderResults(d.results);
+        break;
+      }
+    } catch(e) { break; }
+  }
+}
+
+async function sigsRunBacktest() {
+  if (!_btSelectedTickers.length) {
+    // Auto-populate from signals if empty
+    btInitTickers();
+    if (!_btSelectedTickers.length) { toast('No tickers selected — run a scan first', 'warning'); return; }
+  }
+
+  const btn  = document.getElementById('bt-run-btn');
+  const prog = document.getElementById('bt-progress-wrap');
+  if (btn)  { btn.disabled = true; btn.textContent = 'Running…'; }
+  if (prog) prog.style.display = 'flex';
+  document.getElementById('bt-empty')?.style && (document.getElementById('bt-empty').style.display = 'none');
+
+  try {
+    const r = await fetch('/api/signals/backtest', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')},
+      body: JSON.stringify({tickers: _btSelectedTickers}),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    // Poll until done
+    await _btPollUntilDone();
+  } catch(e) {
+    toast('Backtest failed: ' + e.message, 'error');
+  }
+
+  if (btn)  { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:4px;vertical-align:middle"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Run Backtest'; }
+  if (prog) prog.style.display = 'none';
+}
+
+function btRenderResults(results) {
+  if (!results || !results.stats) return;
+  const stats  = results.stats;
+  const resEl  = document.getElementById('bt-results');
+  const emptyEl = document.getElementById('bt-empty');
+  if (resEl)  resEl.style.display  = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  const lastEl = document.getElementById('bt-last-ran');
+  if (lastEl && results.ran_at) lastEl.textContent = 'Last run: ' + new Date(results.ran_at).toLocaleDateString();
+
+  // Stats grid
+  const sg = document.getElementById('bt-stats-grid');
+  if (sg) {
+    const ret = stats.total_return_pct;
+    const wr  = stats.win_rate;
+    sg.innerHTML = [
+      ['Total Return',   (ret >= 0 ? '+' : '') + ret + '%',         ret >= 0 ? 'var(--teal)' : 'var(--rose)'],
+      ['Win Rate',       wr + '%',                                   wr >= 55 ? 'var(--teal)' : wr >= 45 ? 'var(--gold)' : 'var(--rose)'],
+      ['Sharpe Ratio',   stats.sharpe,                               stats.sharpe >= 1 ? 'var(--teal)' : stats.sharpe >= 0.5 ? 'var(--gold)' : 'var(--rose)'],
+      ['Max Drawdown',   stats.max_drawdown_pct + '%',               stats.max_drawdown_pct <= 10 ? 'var(--teal)' : stats.max_drawdown_pct <= 20 ? 'var(--gold)' : 'var(--rose)'],
+      ['Profit Factor',  stats.profit_factor + 'x',                  stats.profit_factor >= 1.5 ? 'var(--teal)' : 'var(--gold)'],
+      ['Total Trades',   stats.total_trades,                         'var(--text)'],
+      ['Avg Win',        '+' + stats.avg_win_pct + '%',              'var(--teal)'],
+      ['Avg Loss',       stats.avg_loss_pct + '%',                   'var(--rose)'],
+    ].map(([lbl, val, clr]) =>
+      `<div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${lbl}</div>
+        <div style="font-size:16px;font-weight:700;color:${clr};font-family:var(--font-mono)">${val}</div>
+      </div>`
+    ).join('');
+  }
+
+  // Equity curve
+  if (stats.equity_curve && stats.equity_curve.length > 1) {
+    const labels = stats.equity_curve.map(p => p[0]);
+    const vals   = stats.equity_curve.map(p => p[1]);
+    const pos    = vals[vals.length - 1] >= 1.0;
+    mkChart('bt-equity-chart', 'line', {
+      labels,
+      datasets: [{
+        data: vals,
+        borderColor: pos ? 'rgb(20,184,166)' : 'rgb(251,113,133)',
+        backgroundColor: pos ? 'rgba(20,184,166,.08)' : 'rgba(251,113,133,.08)',
+        borderWidth: 2, fill: true, tension: 0.3, pointRadius: 0,
+      }],
+    }, {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {display: false},
+        tooltip: {callbacks: {label: ctx => ((ctx.raw - 1) * 100).toFixed(1) + '%'}}
+      },
+      scales: {
+        x: {ticks: {maxTicksLimit: 8, color: 'var(--text3)', font: {size: 10}}, grid: {color: 'rgba(255,255,255,.04)'}},
+        y: {ticks: {color: 'var(--text3)', font: {size: 10}, callback: v => ((v - 1) * 100).toFixed(0) + '%'}, grid: {color: 'rgba(255,255,255,.04)'}},
+      },
+    });
+  }
+
+  // Per-ticker summary
+  const ptEl = document.getElementById('bt-per-ticker');
+  if (ptEl && results.per_ticker && Object.keys(results.per_ticker).length) {
+    const rows = Object.entries(results.per_ticker).sort((a, b) => b[1].total_return_pct - a[1].total_return_pct);
+    ptEl.innerHTML = `<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:500">Per ticker</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${rows.map(([t, d]) => {
+          const ret = d.total_return_pct;
+          const clr = ret >= 0 ? 'var(--teal)' : 'var(--rose)';
+          return `<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;min-width:120px">
+            <div style="font-size:12px;font-weight:700;font-family:var(--font-display)">${t}</div>
+            <div style="font-size:13px;font-weight:600;color:${clr};font-family:var(--font-mono)">${ret >= 0 ? '+' : ''}${ret}%</div>
+            <div style="font-size:10px;color:var(--text3)">${d.total_trades} trades · ${d.win_rate}% win</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
+
+  // Per-signal-type table
+  const stEl = document.getElementById('bt-sig-table');
+  if (stEl && stats.signal_breakdown?.length) {
+    stEl.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+      <thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:6px 8px;color:var(--text3);font-weight:500">Signal Type</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Trades</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Win Rate</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--text3);font-weight:500">Avg P&amp;L</th>
+      </tr></thead>
+      <tbody>${stats.signal_breakdown.map(row => {
+        const wc = row.win_rate >= 55 ? 'var(--teal)' : row.win_rate >= 45 ? 'var(--gold)' : 'var(--rose)';
+        const pc = row.avg_pnl >= 0 ? 'var(--teal)' : 'var(--rose)';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:8px;color:var(--text)">${BT_SIG_NAMES[row.signal_type] || row.signal_type}</td>
+          <td style="padding:8px;text-align:right;color:var(--text2);font-family:var(--font-mono)">${row.total}</td>
+          <td style="padding:8px;text-align:right;color:${wc};font-family:var(--font-mono);font-weight:600">${row.win_rate}%</td>
+          <td style="padding:8px;text-align:right;color:${pc};font-family:var(--font-mono)">${row.avg_pnl >= 0 ? '+' : ''}${row.avg_pnl}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  }
+}
+
+function sigsRenderHistory() {
+  const stats  = SIGNALS.stats;
+  const trades = SIGNALS.trades;
+  const section = document.getElementById('sigs-perf-section');
+  if (!section) return;
+
+  if (!stats || trades.length < 5) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+
+  // KPI cards
+  const kpiEl = document.getElementById('sigs-perf-kpis');
+  if (kpiEl) {
+    const fmt = (v, suffix='') => v != null ? v + suffix : '—';
+    const kpis = [
+      {label:'Total Trades',  val: stats.total_trades,                    clr:'var(--text)'},
+      {label:'Win Rate',      val: Math.round((stats.win_rate||0)*100)+'%', clr:'var(--teal)'},
+      {label:'Avg R-Multiple',val: fmt(stats.avg_r,'R'),                   clr: stats.avg_r >= 0 ? 'var(--teal)' : 'var(--rose)'},
+      {label:'Profit Factor', val: stats.profit_factor ? stats.profit_factor.toFixed(2) : '—', clr:'var(--gold)'},
+      {label:'Total P&L',     val: '£' + Math.abs(stats.total_pnl||0).toFixed(2),
+                                                                           clr: (stats.total_pnl||0) >= 0 ? 'var(--teal)' : 'var(--rose)'},
+      {label:'Streak',        val: `${stats.streak} ${stats.streak_type||''}`, clr:'var(--text2)'},
+    ];
+    kpiEl.innerHTML = kpis.map(k => `
+      <div class="card" style="padding:12px 14px">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">${k.label}</div>
+        <div style="font-size:15px;font-weight:700;font-family:var(--font-mono);color:${k.clr}">${k.val}</div>
+      </div>`).join('');
+  }
+
+  // P&L cumulative chart
+  const cumPnl = [];
+  let running = 0;
+  const labels = [];
+  trades.forEach((t, i) => {
+    running += (t.pnl || 0);
+    cumPnl.push(parseFloat(running.toFixed(2)));
+    labels.push(t.exit_date ? t.exit_date.slice(5) : `#${i+1}`);
+  });
+
+  const pnlCanvas = document.getElementById('sigs-pnl-chart');
+  if (pnlCanvas) {
+    if (SIGNALS._pnlChart) { SIGNALS._pnlChart.destroy(); SIGNALS._pnlChart = null; }
+    SIGNALS._pnlChart = mkChart('sigs-pnl-chart', 'line', {
+      labels,
+      datasets: [{
+        data: cumPnl,
+        borderColor: cumPnl[cumPnl.length-1] >= 0 ? 'rgb(20,184,166)' : 'rgb(251,113,133)',
+        backgroundColor: cumPnl[cumPnl.length-1] >= 0 ? 'rgba(20,184,166,.1)' : 'rgba(251,113,133,.1)',
+        fill: true, tension: 0.3, pointRadius: 2,
+      }]
+    }, {
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#888',font:{size:9}},grid:{color:'#2a2a2a'}},
+        y:{ticks:{color:'#888',font:{size:9},callback:v=>'£'+v},grid:{color:'#2a2a2a'}},
+      }
+    });
+  }
+
+  // Monthly bar chart
+  const monthly = stats.monthly_pnl || {};
+  const months  = Object.keys(monthly).sort();
+  const mVals   = months.map(m => monthly[m]);
+  const monthCanvas = document.getElementById('sigs-monthly-chart');
+  if (monthCanvas) {
+    if (SIGNALS._monthChart) { SIGNALS._monthChart.destroy(); SIGNALS._monthChart = null; }
+    SIGNALS._monthChart = mkChart('sigs-monthly-chart', 'bar', {
+      labels: months.map(m => m.slice(2)),
+      datasets: [{
+        data: mVals,
+        backgroundColor: mVals.map(v => v >= 0 ? 'rgba(20,184,166,.7)' : 'rgba(251,113,133,.7)'),
+        borderRadius: 4,
+      }]
+    }, {
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#888',font:{size:9}},grid:{display:false}},
+        y:{ticks:{color:'#888',font:{size:9},callback:v=>'£'+v},grid:{color:'#2a2a2a'}},
+      }
+    });
+  }
+}
+
+function sigsTogglePerf() {
+  const body = document.getElementById('sigs-perf-body');
+  const btn  = document.getElementById('sigs-perf-toggle');
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  if (btn) btn.textContent = hidden ? 'Hide' : 'Show';
+}
+
+// ── Cross-reference: signal badges in SI table ───────────────────────────────
+// This function is called from renderIntelligence() to add ⚡ badges
+function sigsGetBadgeForTicker(ticker) {
+  if (!SIGNALS.signals || !SIGNALS.signals.length) return '';
+  const sig = SIGNALS.signals.find(s => s.ticker.toUpperCase() === ticker.toUpperCase());
+  if (!sig) return '';
+  const bColor = sig.direction === 'long' ? 'var(--teal)' : 'var(--rose)';
+  return `<span title="${sig.direction.toUpperCase()} signal: ${SIG_TYPE_LABELS[sig.signal_type]||sig.signal_type} (${Math.round(sig.strength*100)}%)"
+    onclick="nav('signals',document.querySelector('.nav-item[onclick*=signals]'))"
+    style="cursor:pointer;display:inline-flex;align-items:center;margin-left:6px;background:rgba(0,0,0,.3);
+           border:1px solid ${bColor};border-radius:10px;padding:1px 6px;font-size:10px;color:${bColor}">
+    ⚡ ${sig.direction === 'long' ? 'L' : 'S'}
+  </span>`;
+}
+
 </script>
 
 <!-- RSU Modal -->
