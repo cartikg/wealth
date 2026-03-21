@@ -9791,15 +9791,16 @@ async function siRefreshAll() {
 // ── Trading Signals ─────────────────────────────────────────────────────────
 
 const SIGNALS = {
-  signals:      [],
-  positions:    [],
-  regime:       {},
-  stats:        null,
-  trades:       [],
-  mode:         'B',
-  universe:     'global',
-  trading_mode: 'live',
-  scanning:     false,
+  signals:        [],
+  signal_tickers: [],   // all tickers that had any signal (for backtest)
+  positions:      [],
+  regime:         {},
+  stats:          null,
+  trades:         [],
+  mode:           'B',
+  universe:       'global',
+  trading_mode:   'live',
+  scanning:       false,
   _pollTimer:   null,
   _pnlChart:    null,
   _monthChart:  null,
@@ -9859,8 +9860,9 @@ async function renderSignals() {
     const r = await fetch('/api/signals/scan-status', {headers: hdrs});
     if (r.ok) {
       const d = await r.json();
-      if (d.signals) SIGNALS.signals = d.signals;
-      if (d.regime)  SIGNALS.regime  = d.regime;
+      if (d.signals)        SIGNALS.signals        = d.signals;
+      if (d.signal_tickers) SIGNALS.signal_tickers = d.signal_tickers;
+      if (d.regime)         SIGNALS.regime         = d.regime;
       sigsRenderStatusCards();
       sigsRenderSignalsList();
       const st = d.scan || {};
@@ -9979,11 +9981,13 @@ async function _sigsPollUntilDone() {
         sigsRenderSignalsList();
         sigsRenderStatusCards();
       }
+      if (d.signal_tickers && d.signal_tickers.length > 0) SIGNALS.signal_tickers = d.signal_tickers;
       if (d.regime) SIGNALS.regime = d.regime;
 
       if (!st.running) {
-        // Final definitive render
+        // Final definitive render — signals are now persisted to data.json
         if (d.signals) SIGNALS.signals = d.signals;
+        if (d.signal_tickers) SIGNALS.signal_tickers = d.signal_tickers;
         if (d.log)     sigsRenderScanLog(d.log, st);
         const el = document.getElementById('sigs-scan-time');
         if (el && st.last_ran) el.textContent = 'Last scan: ' + new Date(st.last_ran).toLocaleTimeString();
@@ -10586,8 +10590,11 @@ const BT_SIG_NAMES = {
 };
 
 function btInitTickers() {
-  const available = [...new Set(SIGNALS.signals.map(s => s.ticker))];
-  // Pre-select all (up to 15)
+  // Use all signal tickers (not just top-10 active) for the backtest picker
+  const available = [...new Set([
+    ...(SIGNALS.signal_tickers || []),
+    ...SIGNALS.signals.map(s => s.ticker)
+  ])];
   _btSelectedTickers = available.slice(0, 15);
   btRenderChips();
 }
@@ -10595,7 +10602,11 @@ function btInitTickers() {
 function btRenderChips() {
   const el = document.getElementById('bt-ticker-chips');
   if (!el) return;
-  const available = [...new Set([..._btSelectedTickers, ...SIGNALS.signals.map(s => s.ticker)])];
+  const available = [...new Set([
+    ..._btSelectedTickers,
+    ...(SIGNALS.signal_tickers || []),
+    ...SIGNALS.signals.map(s => s.ticker)
+  ])];
   if (!available.length) {
     el.innerHTML = '<span style="font-size:12px;color:var(--text3)">Run a signal scan first to populate tickers</span>';
     return;
