@@ -6633,9 +6633,7 @@ def _stoch(closes, highs, lows, period=14):
 def _pick_engine(ticker, cfg):
     """Pick best engine for ticker based on asset type."""
     t = ticker.upper()
-    crypto_syms = {'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'AVAX', 'LINK', 'DOT',
-                   'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD'}
-    if t in crypto_syms or t.endswith('-USD'):
+    if t in _CRYPTO_BASES or t in _CRYPTO_DISPLAY_NAMES or t.endswith('-USD') or t in _YF_RENAMES:
         return 'crypto_spot'
     return 'stock_cfds'
 
@@ -6713,119 +6711,188 @@ _batch_hist_cache          = {}   # ticker → DataFrame
 _batch_hist_cache_ts       = 0.0  # last full-batch fetch timestamp
 _batch_hist_cache_universe = ''   # universe key the cache was built for
 
+# ── Symbol normalisation ──────────────────────────────────────────────────────
+# Portfolio holdings may store crypto as display names ('SOLANA', 'BITCOIN')
+# or bare bases ('BTC', 'ETH').  These must be mapped to valid yfinance symbols.
 
-def _fetch_one_ticker(sym):
-    """Download 8 months of daily OHLCV for a single ticker.
-    Returns (ticker_upper, DataFrame|None).
-    Handles three cases:
-      1. Already a -USD pair (e.g. 'BTC-USD', 'ETH-USD') → use as-is
-      2. Bare crypto base (e.g. 'BTC', 'ETH') → append '-USD'
-      3. Stock ticker (e.g. 'AAPL', 'NVDA') → use as-is
-    Known renames: MATIC → POL (Polygon rebranded Jan 2024).
+_YF_RENAMES = {
+    'MATIC':     'POL-USD',
+    'MATIC-USD': 'POL-USD',
+    'BITCOIN':   'BTC-USD',
+    'ETHEREUM':  'ETH-USD',
+    'SOLANA':    'SOL-USD',
+}
+
+_CRYPTO_BASES = {
+    'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX',
+    'LINK', 'DOT', 'LTC', 'BNB', 'UNI', 'ATOM', 'NEAR', 'POL',
+}
+
+# Display names that should be treated as crypto for engine selection
+_CRYPTO_DISPLAY_NAMES = {'BITCOIN', 'ETHEREUM', 'SOLANA'}
+
+
+def _normalize_yf_symbol(sym):
+    """Convert a portfolio/display ticker to a valid yfinance download symbol.
+
+    Examples:
+        'AAPL'      → 'AAPL'       (stock — use as-is)
+        'BTC-USD'   → 'BTC-USD'    (crypto pair — use as-is)
+        'BTC'       → 'BTC-USD'    (bare crypto base — append -USD)
+        'BITCOIN'   → 'BTC-USD'    (display name — rename)
+        'MATIC'     → 'POL-USD'    (deprecated ticker — rename)
     """
-    import yfinance as yf
-    # Crypto bases that need -USD appended when given without suffix
-    CRYPTO_BASES = {'BTC','ETH','SOL','XRP','ADA','DOGE','AVAX',
-                    'LINK','DOT','LTC','BNB','UNI','ATOM','NEAR'}
-    # Known ticker renames on Yahoo Finance
-    RENAMES = {
-        'MATIC':     'POL-USD',   # Polygon rebranded MATIC → POL
-        'MATIC-USD': 'POL-USD',
-    }
     s = sym.upper()
-    if s in RENAMES:
-        yf_sym = RENAMES[s]
-    elif s.endswith('-USD'):
-        yf_sym = s          # already a valid crypto pair
-    elif s in CRYPTO_BASES:
-        yf_sym = s + '-USD'
-    else:
-        yf_sym = s          # stock ticker
-
-    try:
-        df = yf.download(yf_sym, period='8mo', interval='1d',
-                         auto_adjust=True, progress=False)
-        if df is None or len(df) < 55:
-            return s, None
-        # Flatten any MultiIndex columns (single-ticker download is usually flat)
-        import pandas as pd
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        if 'Close' not in df.columns:
-            return s, None
-        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-        df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
-        return s, df if len(df) >= 55 else None
-    except Exception as e:
-        print(f'[signals] download error {sym} (yf:{yf_sym}): {e}')
-        return s, None
+    if s in _YF_RENAMES:
+        return _YF_RENAMES[s]
+    if s.endswith('-USD'):
+        return s
+    if s in _CRYPTO_BASES:
+        return s + '-USD'
+    return s
 
 
 def _fetch_batch_universe(tickers):
-    """Download 8 months of daily OHLCV for all tickers in parallel.
-    Uses ThreadPoolExecutor with individual single-ticker downloads.
-    Hard-caps at 90 s total — prevents the scan hanging forever on Render
-    when Yahoo Finance connections stall without sending a TCP RST.
-    Returns dict: ticker (upper) → DataFrame.
+    """Download 8 months of daily OHLCV for all tickers using a SINGLE
+    yf.download() call with `group_by='ticker'`.
+
+    Why not ThreadPoolExecutor?
+    ──────────────────────────
+    yfinance 0.2.31+ uses a shared global HTTP session.  When multiple
+    threads each call yf.download() concurrently, the responses can leak
+    between threads — a DataFrame intended for DOGE-USD silently ends up
+    keyed under LTC-USD.  The result: multiple tickers produce bit-for-bit
+    identical signals.
+
+    The fix: one yf.download(list_of_tickers, group_by='ticker') call.
+    yfinance handles parallelism internally and returns a properly-keyed
+    MultiIndex DataFrame where each ticker's data is separated at the
+    column level, making cross-contamination impossible.
+
+    Returns dict: original_ticker (upper) → DataFrame.
     """
     import time
-    from concurrent.futures import ThreadPoolExecutor, wait as _cf_wait
+    import threading as _thr
+    import yfinance as yf
+    import pandas as pd
 
     global _batch_hist_cache, _batch_hist_cache_ts, _batch_hist_cache_universe
 
     now = time.time()
-    # Build a canonical key for this ticker set so we can detect a universe change.
     universe_key = ','.join(sorted(t.upper() for t in tickers))
-    cache_stale  = now - _batch_hist_cache_ts >= 1800
-    cache_wrong_universe = _batch_hist_cache_universe != universe_key
-    # Use cache only if fresh, non-empty, AND for the exact same ticker set.
-    # Invalidate if the universe changed — stale DataFrames from a different universe
-    # can end up stored under the wrong ticker key, causing duplicate signals.
-    if _batch_hist_cache and not cache_stale and not cache_wrong_universe:
+    cache_fresh  = now - _batch_hist_cache_ts < 1800
+    cache_match  = _batch_hist_cache_universe == universe_key
+
+    if _batch_hist_cache and cache_fresh and cache_match:
         print(f'[signals] using cached data ({len(_batch_hist_cache)}/{len(tickers)} tickers)')
         return _batch_hist_cache
-    if cache_wrong_universe and _batch_hist_cache:
-        print(f'[signals] universe changed — clearing batch cache to avoid cross-ticker data contamination')
 
-    print(f'[signals] downloading {len(tickers)} tickers (5 workers, 90s cap)…')
+    # ── 1. Build original ↔ yfinance symbol mapping ──────────────────────────
+    yf_to_orig = {}     # 'BTC-USD' → 'BTC-USD' (or 'BITCOIN' → 'BTC-USD')
+    orig_to_yf = {}     # 'BITCOIN' → 'BTC-USD'
+    for t in tickers:
+        s = t.upper()
+        yf_sym = _normalize_yf_symbol(s)
+        yf_to_orig.setdefault(yf_sym, s)   # first occurrence wins
+        orig_to_yf[s] = yf_sym
+
+    yf_symbols = sorted(yf_to_orig.keys())
+    print(f'[signals] downloading {len(yf_symbols)} tickers via batch yf.download…')
+
+    # ── 2. Download inside a daemon thread with 90 s hard cap ────────────────
+    container = {}
+    dl_error  = [None]
+
+    def _do_download():
+        try:
+            raw = yf.download(
+                yf_symbols,
+                period='8mo', interval='1d',
+                auto_adjust=True, progress=False,
+                group_by='ticker', threads=True,
+            )
+            container['raw'] = raw
+        except Exception as exc:
+            dl_error[0] = exc
+
+    dl = _thr.Thread(target=_do_download, daemon=True)
+    dl.start()
+    dl.join(timeout=90)
+
+    if dl.is_alive():
+        print(f'[signals] TIMEOUT: batch download did not finish in 90 s')
+        for entry in _scan_state.get('log', []):
+            if entry.get('status') == 'fetching':
+                entry['status'] = 'timeout'
+                entry['msg']    = 'Download timed out (90 s cap)'
+        return {}
+
+    if dl_error[0]:
+        print(f'[signals] batch download error: {dl_error[0]}')
+        return {}
+
+    raw = container.get('raw')
+    if raw is None or len(raw) == 0:
+        print('[signals] WARNING: yf.download returned empty — 0 tickers')
+        return {}
+
+    # ── 3. Parse the result into per-ticker DataFrames ────────────────────────
     result = {}
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        futures_map  = {pool.submit(_fetch_one_ticker, t): t for t in tickers}
-        futures_list = list(futures_map.keys())
+    def _extract_df(df):
+        """Clean a single-ticker DataFrame: ensure flat columns, OHLCV only,
+        drop NaN, require ≥ 55 bars."""
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.copy()
+            df.columns = df.columns.get_level_values(0)
+        needed = {'Open', 'High', 'Low', 'Close', 'Volume'}
+        if not needed.issubset(set(df.columns)):
+            return None
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
+        return df if len(df) >= 55 else None
 
-        # Hard 90-second wall-clock cap: take whatever landed, drop the rest.
-        done_set, pending_set = _cf_wait(futures_list, timeout=90)
-
-        for fut in done_set:
+    if isinstance(raw.columns, pd.MultiIndex):
+        if len(yf_symbols) == 1:
+            # Single-ticker download still returns MultiIndex in yfinance 0.2.31+
+            yf_sym = yf_symbols[0]
+            orig   = yf_to_orig.get(yf_sym, yf_sym)
             try:
-                sym, df = fut.result(timeout=0)   # already completed
+                df = _extract_df(raw)
                 if df is not None:
-                    result[sym] = df
-            except Exception as e:
-                print(f'[signals] future error: {e}')
-
-        if pending_set:
-            pending_tickers = [futures_map[f] for f in pending_set]
-            print(f'[signals] TIMEOUT: {len(pending_set)} tickers did not finish in 90s: {pending_tickers}')
-            # Update pre-populated log entries so the UI shows timeout status
-            for sym in pending_tickers:
-                for entry in _scan_state.get('log', []):
-                    if entry.get('ticker', '').upper() == str(sym).upper() \
-                            and entry.get('status') == 'fetching':
-                        entry['status'] = 'timeout'
-                        entry['msg']    = 'Download timed out (90s cap)'
-                        break
-            for fut in pending_set:
-                fut.cancel()
+                    result[orig] = df
+            except Exception as exc:
+                print(f'[signals] parse error {yf_sym}: {exc}')
+        else:
+            # group_by='ticker': level-0 = ticker symbol, level-1 = OHLCV column
+            available = raw.columns.get_level_values(0).unique()
+            for yf_sym in available:
+                orig = yf_to_orig.get(yf_sym, yf_sym)
+                try:
+                    df = _extract_df(raw[yf_sym])
+                    if df is not None:
+                        result[orig] = df
+                except Exception as exc:
+                    print(f'[signals] parse error {yf_sym}: {exc}')
+    else:
+        # Flat columns — older yfinance or single ticker
+        if len(yf_symbols) == 1:
+            yf_sym = yf_symbols[0]
+            orig   = yf_to_orig.get(yf_sym, yf_sym)
+            try:
+                df = _extract_df(raw)
+                if df is not None:
+                    result[orig] = df
+            except Exception:
+                pass
 
     print(f'[signals] download complete: {len(result)}/{len(tickers)} tickers with data')
 
-    # Only cache if we actually got data — don't cache a failed download
+    # ── 4. Cache ──────────────────────────────────────────────────────────────
     if result:
         _batch_hist_cache          = result
         _batch_hist_cache_ts       = now
-        _batch_hist_cache_universe = universe_key   # record which ticker set this cache covers
+        _batch_hist_cache_universe = universe_key
     else:
         print('[signals] WARNING: 0 tickers returned data — cache NOT stored, will retry next scan')
 
@@ -6838,11 +6905,7 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
     """
     import numpy as np
 
-    yf_sym = ticker
-    crypto_bases = {'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'AVAX', 'LINK', 'DOT', 'LTC',
-                    'BNB', 'UNI', 'ATOM', 'NEAR'}
-    if ticker.upper() in crypto_bases:
-        yf_sym = ticker.upper() + '-USD'
+    yf_sym = _normalize_yf_symbol(ticker)
 
     if hist is None:
         try:
@@ -6854,8 +6917,9 @@ def _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=None):
     if hist is None or len(hist) < 55:
         return []
 
-    # Flatten MultiIndex columns (yfinance 0.2+)
-    if hasattr(hist.columns, 'get_level_values'):
+    # Flatten MultiIndex columns (yfinance 0.2.31+)
+    import pandas as pd
+    if isinstance(hist.columns, pd.MultiIndex):
         hist = hist.copy()
         hist.columns = hist.columns.get_level_values(0)
 
@@ -7271,8 +7335,9 @@ def _backtest_ticker(ticker, hist, risk_pct=0.015):
     """
     import numpy as np
 
-    # Flatten MultiIndex columns (yfinance 0.2+)
-    if hasattr(hist.columns, 'get_level_values'):
+    # Flatten MultiIndex columns (yfinance 0.2.31+)
+    import pandas as pd
+    if isinstance(hist.columns, pd.MultiIndex):
         hist = hist.copy()
         hist.columns = hist.columns.get_level_values(0)
 
