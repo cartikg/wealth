@@ -6709,8 +6709,9 @@ SCAN_UNIVERSES = {
 }
 
 # In-memory cache for batch-downloaded price data (avoid re-fetching within 30 min)
-_batch_hist_cache     = {}   # ticker → DataFrame
-_batch_hist_cache_ts  = 0.0  # last full-batch fetch timestamp
+_batch_hist_cache          = {}   # ticker → DataFrame
+_batch_hist_cache_ts       = 0.0  # last full-batch fetch timestamp
+_batch_hist_cache_universe = ''   # universe key the cache was built for
 
 
 def _fetch_one_ticker(sym):
@@ -6770,13 +6771,21 @@ def _fetch_batch_universe(tickers):
     import time
     from concurrent.futures import ThreadPoolExecutor, wait as _cf_wait
 
-    global _batch_hist_cache, _batch_hist_cache_ts
+    global _batch_hist_cache, _batch_hist_cache_ts, _batch_hist_cache_universe
 
     now = time.time()
-    # Use cache only if less than 30 minutes old AND non-empty
-    if _batch_hist_cache and now - _batch_hist_cache_ts < 1800:
+    # Build a canonical key for this ticker set so we can detect a universe change.
+    universe_key = ','.join(sorted(t.upper() for t in tickers))
+    cache_stale  = now - _batch_hist_cache_ts >= 1800
+    cache_wrong_universe = _batch_hist_cache_universe != universe_key
+    # Use cache only if fresh, non-empty, AND for the exact same ticker set.
+    # Invalidate if the universe changed — stale DataFrames from a different universe
+    # can end up stored under the wrong ticker key, causing duplicate signals.
+    if _batch_hist_cache and not cache_stale and not cache_wrong_universe:
         print(f'[signals] using cached data ({len(_batch_hist_cache)}/{len(tickers)} tickers)')
         return _batch_hist_cache
+    if cache_wrong_universe and _batch_hist_cache:
+        print(f'[signals] universe changed — clearing batch cache to avoid cross-ticker data contamination')
 
     print(f'[signals] downloading {len(tickers)} tickers (5 workers, 90s cap)…')
     result = {}
@@ -6814,8 +6823,9 @@ def _fetch_batch_universe(tickers):
 
     # Only cache if we actually got data — don't cache a failed download
     if result:
-        _batch_hist_cache    = result
-        _batch_hist_cache_ts = now
+        _batch_hist_cache          = result
+        _batch_hist_cache_ts       = now
+        _batch_hist_cache_universe = universe_key   # record which ticker set this cache covers
     else:
         print('[signals] WARNING: 0 tickers returned data — cache NOT stored, will retry next scan')
 
@@ -7144,6 +7154,10 @@ def generate_trading_signals(data):
 
     # 4. Per-ticker signal generation — update pre-existing log entries in-place
     signals  = []
+    # Seen (entry, stop, target) tuples — used to catch cross-ticker data contamination
+    # where a cached DataFrame was stored under the wrong ticker key, causing two
+    # different tickers to produce bit-for-bit identical signal values.
+    _seen_signal_coords = set()
     log_map  = {e['ticker']: e for e in _scan_state['log']}
     for ticker in all_tickers:
         entry = log_map.get(ticker, {'ticker': ticker, 'status': 'fetching', 'msg': ''})
@@ -7160,6 +7174,20 @@ def generate_trading_signals(data):
                 else:
                     sigs = _compute_signals_for_ticker(ticker, cfg, risk_pct, data, hist=hist)
                     strong = [s for s in sigs if s.get('strength', 0) >= 0.60]
+                    # Dedup: drop any signal whose (entry, stop, target) exactly matches
+                    # a signal already emitted for a different ticker — this is a data
+                    # contamination fingerprint (wrong DataFrame stored in cache).
+                    clean_strong = []
+                    for _s in strong:
+                        _coord = (round(_s['entry_price'], 4), round(_s['stop_loss'], 4), round(_s['target'], 4))
+                        if _coord in _seen_signal_coords:
+                            print(f'[signals] WARNING: {ticker} signal duplicates coords from earlier ticker — dropping (cache contamination)')
+                            # Invalidate the cache so the next scan fetches fresh data
+                            _batch_hist_cache.clear()
+                        else:
+                            _seen_signal_coords.add(_coord)
+                            clean_strong.append(_s)
+                    strong = clean_strong
                     signals.extend(strong)
                     if strong:
                         entry['status'] = 'signal'
