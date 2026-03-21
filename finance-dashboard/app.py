@@ -7081,20 +7081,23 @@ def generate_trading_signals(data):
     risk_pct = float(cfg.get('risk_per_trade', 0.015))
     universe_key = cfg.get('scan_universe', 'global')
 
-    # 1. Always-included personal tickers
+    # 1. Personal tickers — only included when universe is personal/portfolio mode.
+    #    For named universes (crypto, nasdaq100, etc.) we scan ONLY that universe so
+    #    the results stay focused.  Mixing 40 personal holdings into a "Crypto" scan
+    #    inflates the ticker count and returns irrelevant equity signals.
     personal = set()
-    for bucket, items in data.get('investments', {}).items():
-        for h in items:
-            t = h.get('ticker') or h.get('coin_id')
-            if t:
-                personal.add(str(t).upper())
-    for t in data.get('watchlist', []):
-        personal.add(str(t).upper())
-    for t in data.get('research_data', {}).keys():
-        personal.add(str(t).upper())
+    if universe_key in ('portfolio_only', 'personal'):
+        for bucket, items in data.get('investments', {}).items():
+            for h in items:
+                t = h.get('ticker') or h.get('coin_id')
+                if t:
+                    personal.add(str(t).upper())
+        for t in data.get('watchlist', []):
+            personal.add(str(t).upper())
+        for t in data.get('research_data', {}).keys():
+            personal.add(str(t).upper())
 
     # 2. Market universe
-    market_universe = []
     if universe_key in ('portfolio_only', 'personal'):
         market_universe = []   # personal tickers only — already captured above
     else:
@@ -7192,9 +7195,19 @@ def _run_background_scan():
             sd['regime'] = compute_market_regime(data)
         except Exception:
             pass
-        save_data(data)
-        # Set last_ran AFTER save so the frontend only reads signals once they're persisted.
+        # Set last_ran BEFORE save so it's available as soon as data.json is written.
         _scan_state['last_ran'] = datetime.utcnow().isoformat() + 'Z'
+        # Persist a lightweight scan-completion record so other gunicorn workers
+        # (which don't share in-memory _scan_state) can detect that the scan is done.
+        sd['scan_state'] = {
+            'running':        False,
+            'last_ran':       _scan_state['last_ran'],
+            'total':          _scan_state.get('total', 0),
+            'done':           _scan_state.get('done', 0),
+            'universe':       _scan_state.get('universe'),
+            'signal_tickers': _scan_state.get('signal_tickers', []),
+        }
+        save_data(data)
         print(f'[signals] background scan complete: {len(signals)} signals saved')
     except Exception as e:
         import traceback
@@ -7578,8 +7591,16 @@ def _run_backtest_thread(tickers):
             'period':       '10y',
             'total_trades': len(all_trades),
         }
-        save_data(data)
         _backtest_state['last_ran'] = datetime.utcnow().isoformat() + 'Z'
+        # Persist completion state so other gunicorn workers see running=False
+        sd['backtest_state'] = {
+            'running':  False,
+            'last_ran': _backtest_state['last_ran'],
+            'total':    _backtest_state.get('total', 0),
+            'done':     _backtest_state.get('done', 0),
+            'tickers':  list(tickers),
+        }
+        save_data(data)
         print(f'[backtest] done. {len(all_trades)} total trades across {len(tickers)} tickers.')
 
     except Exception as e:
@@ -7631,12 +7652,25 @@ def get_scan_status():
     """
     data = load_data()
     sd   = data.get('signals_data', {})
+
+    # Multi-worker fix: in a multi-process gunicorn setup each worker has its own
+    # in-memory _scan_state.  If this worker didn't run the scan it will never see
+    # running=False in memory.  Detect this by comparing against the persisted
+    # scan_state written to data.json when the scan-running worker finished.
+    state = _scan_state
+    disk_scan_state = sd.get('scan_state', {})
+    if state.get('running') and not disk_scan_state.get('running') and disk_scan_state.get('last_ran'):
+        # Another worker finished — mirror its completion into our local state
+        _scan_state['running']  = False
+        _scan_state['last_ran'] = disk_scan_state.get('last_ran')
+        state = _scan_state
+
     # Include the live per-ticker log so the frontend can show real-time scan feedback
     return jsonify({
-        'scan':           _scan_state,
-        'log':            _scan_state.get('log', []),
+        'scan':           state,
+        'log':            state.get('log', []),
         'signals':        sd.get('active_signals', []),
-        'signal_tickers': sd.get('signal_tickers', _scan_state.get('signal_tickers', [])),
+        'signal_tickers': sd.get('signal_tickers', state.get('signal_tickers', [])),
         'regime':         sd.get('regime', {'label': 'unknown'}),
     })
 
@@ -7724,6 +7758,13 @@ def backtest_status():
     """Poll backtest progress and return results once done."""
     data = load_data()
     sd   = data.get('signals_data', {})
+
+    # Multi-worker fix: detect when another worker finished the backtest
+    disk_bt_state = sd.get('backtest_state', {})
+    if _backtest_state.get('running') and not disk_bt_state.get('running') and disk_bt_state.get('last_ran'):
+        _backtest_state['running']  = False
+        _backtest_state['last_ran'] = disk_bt_state.get('last_ran')
+
     return jsonify({
         'state':   _backtest_state,
         'results': sd.get('backtest_results', {}) if not _backtest_state['running'] else None,
@@ -7930,7 +7971,7 @@ def update_signals_config():
     body = request.get_json(force=True, silent=True) or {}
     # Only update known safe keys
     for k in ('risk_per_trade', 'max_positions', 'max_drawdown', 'daily_loss_limit', 'mode',
-              'scan_universe', 'min_price', 'min_volume'):
+              'trading_mode', 'scan_universe', 'min_price', 'min_volume'):
         if k in body:
             cfg[k] = body[k]
     if 'engines' in body and isinstance(body['engines'], dict):

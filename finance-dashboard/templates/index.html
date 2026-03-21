@@ -10589,12 +10589,27 @@ const BT_SIG_NAMES = {
   momentum_breakdown_short: 'Momentum Breakdown',
 };
 
-function btInitTickers() {
-  // Use all signal tickers (not just top-10 active) for the backtest picker
-  const available = [...new Set([
+async function btInitTickers() {
+  // Use all signal tickers (not just top-10 active) for the backtest picker.
+  // If local state is empty (e.g. after a page refresh), fetch from the server.
+  let available = [...new Set([
     ...(SIGNALS.signal_tickers || []),
     ...SIGNALS.signals.map(s => s.ticker)
   ])];
+  if (!available.length) {
+    try {
+      const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+      const r = await fetch('/api/signals/scan-status', {headers: hdrs});
+      if (r.ok) {
+        const d = await r.json();
+        if (d.signal_tickers && d.signal_tickers.length) {
+          SIGNALS.signal_tickers = d.signal_tickers;
+          available = d.signal_tickers;
+        }
+        if (d.signals && d.signals.length) SIGNALS.signals = d.signals;
+      }
+    } catch(e) {}
+  }
   _btSelectedTickers = available.slice(0, 15);
   btRenderChips();
 }
@@ -10634,12 +10649,17 @@ function btAddTicker() {
 }
 
 async function _btPollUntilDone() {
-  const hdrs = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
-  while (true) {
+  const hdrs      = {Authorization: 'Bearer ' + sessionStorage.getItem('wealth_token')};
+  const TIMEOUT   = 12 * 60 * 1000;  // 12 min — 10y data download can be slow
+  const MAX_FAILS = 5;
+  const started   = Date.now();
+  let   fails     = 0;
+  while (Date.now() - started < TIMEOUT) {
     await new Promise(r => setTimeout(r, 2500));
     try {
       const resp = await fetch('/api/signals/backtest-status', {headers: hdrs});
-      if (!resp.ok) break;
+      if (!resp.ok) { fails++; if (fails >= MAX_FAILS) break; continue; }
+      fails = 0;
       const d  = await resp.json();
       const st = d.state || {};
       const tot = st.total || 1; const done = st.done || 0;
@@ -10651,10 +10671,16 @@ async function _btPollUntilDone() {
       if (lbl) lbl.textContent = `Backtesting ${done}/${tot} tickers…`;
       if (pe)  pe.textContent  = pct + '%';
       if (!st.running) {
-        if (d.results) btRenderResults(d.results);
+        if (d.results && d.results.stats) {
+          btRenderResults(d.results);
+        } else if (st.error) {
+          toast('Backtest error: ' + st.error, 'error');
+        } else {
+          toast('Backtest completed but no trades were generated — insufficient price data or no signal conditions met in the 10y window.', 'warning');
+        }
         break;
       }
-    } catch(e) { break; }
+    } catch(e) { fails++; if (fails >= MAX_FAILS) break; }
   }
 }
 
