@@ -7128,6 +7128,20 @@ def generate_trading_signals(data):
     _scan_state['batch_got'] = len(batch)
     print(f'[signals] data: {len(batch)}/{len(all_tickers)} tickers downloaded')
 
+    # Persist scan state + log to data.json now that downloads are done.
+    # This lets OTHER gunicorn workers serve the per-ticker log to polling clients
+    # even though the log lives in-memory on this worker only.
+    try:
+        _mid_data = load_data()
+        _mid_data.setdefault('signals_data', {})['scan_state'] = dict(
+            _scan_state,
+            log=list(_scan_state.get('log', [])),
+            running=True,       # still in progress — per-ticker loop hasn't started yet
+        )
+        save_data(_mid_data)
+    except Exception as _e:
+        print(f'[signals] mid-scan persist warning: {_e}')
+
     # 4. Per-ticker signal generation — update pre-existing log entries in-place
     signals  = []
     log_map  = {e['ticker']: e for e in _scan_state['log']}
@@ -7630,7 +7644,15 @@ def get_signals():
         _scan_state['done']       = 0
         _scan_state['total']      = 0
         _scan_state['error']      = None
+        _scan_state['log']        = []   # clear stale log from previous universe scan
         _scan_state['started_at'] = datetime.utcnow().isoformat() + 'Z'
+        # Persist running=True to data.json so OTHER gunicorn workers (which share
+        # data.json but NOT in-memory _scan_state) can detect the scan is in progress.
+        sd['scan_state'] = dict(_scan_state)
+        try:
+            save_data(data)
+        except Exception:
+            pass
         import threading as _threading
         _threading.Thread(target=_run_background_scan, daemon=True).start()
 
@@ -7653,22 +7675,39 @@ def get_scan_status():
     data = load_data()
     sd   = data.get('signals_data', {})
 
-    # Multi-worker fix: in a multi-process gunicorn setup each worker has its own
-    # in-memory _scan_state.  If this worker didn't run the scan it will never see
-    # running=False in memory.  Detect this by comparing against the persisted
-    # scan_state written to data.json when the scan-running worker finished.
-    state = _scan_state
+    # Multi-worker fix: gunicorn spawns N worker processes each with their own
+    # in-memory _scan_state.  Only one worker runs the scan; all others must detect
+    # the scan state by reading data.json which is the single shared source of truth.
+    state           = _scan_state
     disk_scan_state = sd.get('scan_state', {})
-    if state.get('running') and not disk_scan_state.get('running') and disk_scan_state.get('last_ran'):
-        # Another worker finished — mirror its completion into our local state
+
+    if not state.get('running') and disk_scan_state.get('running'):
+        # Another worker started a scan — mirror running=True into our state so this
+        # worker's polling responses tell the frontend the scan is still in progress.
+        _scan_state['running']    = True
+        _scan_state['started_at'] = disk_scan_state.get('started_at')
+        _scan_state['total']      = disk_scan_state.get('total', 0)
+        _scan_state['done']       = disk_scan_state.get('done', 0)
+        _scan_state['universe']   = disk_scan_state.get('universe', '')
+        state = _scan_state
+
+    elif state.get('running') and not disk_scan_state.get('running') and disk_scan_state.get('last_ran'):
+        # Another worker finished — mirror completion into our local state.
         _scan_state['running']  = False
         _scan_state['last_ran'] = disk_scan_state.get('last_ran')
+        _scan_state['done']     = disk_scan_state.get('done', _scan_state.get('done', 0))
+        _scan_state['total']    = disk_scan_state.get('total', _scan_state.get('total', 0))
         state = _scan_state
+
+    # Prefer live in-memory log (scan worker); fall back to last persisted log from disk
+    # so other workers can still serve meaningful progress updates.
+    live_log = state.get('log', [])
+    log = live_log if live_log else disk_scan_state.get('log', [])
 
     # Include the live per-ticker log so the frontend can show real-time scan feedback
     return jsonify({
         'scan':           state,
-        'log':            state.get('log', []),
+        'log':            log,
         'signals':        sd.get('active_signals', []),
         'signal_tickers': sd.get('signal_tickers', state.get('signal_tickers', [])),
         'regime':         sd.get('regime', {'label': 'unknown'}),

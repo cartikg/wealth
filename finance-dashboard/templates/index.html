@@ -9901,6 +9901,14 @@ function sigsHighlightUniverseChip(key) {
 async function sigsSetUniverse(key) {
   SIGNALS.universe = key;
   sigsHighlightUniverseChip(key);
+  // Clear stale signals + log from the previous universe immediately so
+  // the user never sees data that belongs to a different scan universe.
+  SIGNALS.signals = [];
+  SIGNALS.signal_tickers = [];
+  sigsRenderSignalsList();
+  sigsRenderStatusCards();
+  const logSection = document.getElementById('sigs-log-section');
+  if (logSection) logSection.style.display = 'none';
   // Persist to backend config
   try {
     await fetch('/api/signals/config', {
