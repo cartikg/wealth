@@ -246,6 +246,10 @@ def migrate_data(data):
         if len(cleaned) != len(entry.get('news', [])):
             entry['news'] = cleaned
 
+    # Categorization Memory: learned rules
+    if 'category_rules_learned' not in data:
+        data['category_rules_learned'] = []
+
     # Trading Signals: signals_data store
     if 'signals_data' not in data:
         data['signals_data'] = {
@@ -840,21 +844,75 @@ def get_all_data():
     connected_savings_current = 0
     connected_credit_cards = 0
     has_connected_accounts = False
+    credit_card_obligations = []  # for projection
     for acc in data.get('accounts', []):
         bal = float(acc.get('balance', 0))
         is_connected = bool(acc.get('tl_account_id') or acc.get('pl_account_id'))
-        if bal == 0 and not is_connected:
-            continue  # skip offline accounts with no balance
         acc_type = (acc.get('account_type', '') or '').lower()
+        is_credit = acc_type in ('credit_card', 'credit card', 'credit')
+        # For credit cards, include even if balance=0 (user may have set statement_balance)
+        stmt_bal = float(acc.get('statement_balance', 0))
+        if bal == 0 and stmt_bal == 0 and not is_connected and not is_credit:
+            continue  # skip offline non-credit accounts with no balance
         if is_connected:
             has_connected_accounts = True
-            if acc_type in ('credit_card', 'credit card', 'credit'):
-                connected_credit_cards += abs(bal)
-            else:
-                connected_savings_current += bal
+        if is_credit:
+            cc_amount = stmt_bal if stmt_bal > 0 else abs(bal)
+            connected_credit_cards += cc_amount
+            if cc_amount > 0:
+                credit_card_obligations.append({
+                    'account_id': acc['id'],
+                    'name': acc.get('name', ''),
+                    'bank': acc.get('bank', ''),
+                    'amount': cc_amount,
+                    'due_date': acc.get('payment_due_date', ''),
+                    'minimum_payment': float(acc.get('minimum_payment', 0)),
+                })
+        else:
+            connected_savings_current += bal
     manual_savings = float(data.get('savings', 0))
     bank_balance = round(connected_savings_current + manual_savings, 2)
     true_balance = round(bank_balance - connected_credit_cards, 2)
+
+    # Project balance based on upcoming credit card payment dates
+    projected_balance = bank_balance
+    upcoming_payments = []
+    today_obj = datetime.now()
+    for ob in credit_card_obligations:
+        due_str = ob.get('due_date', '')
+        if due_str:
+            try:
+                # Support day-of-month (e.g. "15") or ISO date
+                if len(due_str) <= 2 and due_str.isdigit():
+                    due_day = int(due_str)
+                    # Next occurrence of this day
+                    if today_obj.day <= due_day:
+                        due = today_obj.replace(day=min(due_day, 28))
+                    else:
+                        m = today_obj.month + 1 if today_obj.month < 12 else 1
+                        y = today_obj.year if today_obj.month < 12 else today_obj.year + 1
+                        due = today_obj.replace(year=y, month=m, day=min(due_day, 28))
+                else:
+                    due = datetime.strptime(due_str[:10], '%Y-%m-%d')
+                days_until = (due - today_obj).days
+                if days_until < 0:
+                    days_until += 30  # wrap to next month
+                    due = due.replace(month=due.month + 1 if due.month < 12 else 1)
+                upcoming_payments.append({
+                    'account_id': ob['account_id'],
+                    'name': ob['name'],
+                    'bank': ob['bank'],
+                    'amount': ob['amount'],
+                    'due_date': due.strftime('%Y-%m-%d'),
+                    'days_until': max(0, days_until),
+                })
+                projected_balance -= ob['amount']
+            except Exception:
+                projected_balance -= ob['amount']
+        else:
+            projected_balance -= ob['amount']
+    projected_balance = round(projected_balance, 2)
+    upcoming_payments.sort(key=lambda x: x.get('days_until', 999))
     
     # Property value: manual entry + property values from mortgages (original principal as proxy)
     manual_property = float(data.get('property_value', 0))
@@ -1016,6 +1074,8 @@ def get_all_data():
             'connected_savings_current': round(connected_savings_current, 2),
             'connected_credit_cards': round(connected_credit_cards, 2),
             'true_balance': true_balance,
+            'projected_balance': projected_balance,
+            'upcoming_payments': upcoming_payments,
             'has_connected_accounts': has_connected_accounts,
             'manual_savings': round(manual_savings, 2),
             'property_value': round(property_value, 2),
@@ -1101,20 +1161,28 @@ def add_transaction():
     body = request.json
     today = datetime.now().strftime('%Y-%m-%d')
     txn_date = body.get('date', today)
+    desc = body.get('description', '')
+    cat = body.get('category', '')
+    # If no category provided, auto-categorize using memory
+    if not cat or cat == 'Other':
+        cat = categorise_with_memory(data, desc)
     txn = {
         'id': str(uuid.uuid4()),
         'date': txn_date,
-        'description': body.get('description', ''),
+        'description': desc,
         'amount': float(body.get('amount', 0)),
         'type': body.get('type', 'debit'),
-        'category': body.get('category', 'Other'),
+        'category': cat,
         'currency': body.get('currency', 'GBP'),
-        'account_id': body.get('account_id', ''),
-        'bank': body.get('bank', ''),
+        'account_id': body.get('account_id', '') or (data.get('accounts', [{}])[0].get('id', '') if data.get('accounts') else ''),
+        'bank': body.get('bank', '') or (data.get('accounts', [{}])[0].get('bank', '') if data.get('accounts') and not body.get('account_id') else ''),
         'notes': body.get('notes', ''),
         'is_scheduled': txn_date > today,
         'source': 'manual'
     }
+    # Learn from manual categorization (if user explicitly chose a category)
+    if body.get('category') and body['category'] != 'Other':
+        learn_category_rule(data, desc, body['category'])
     data['transactions'].append(txn)
     save_data(data)
     return jsonify({'ok': True, 'id': txn['id'], 'txn': txn})
@@ -1128,6 +1196,10 @@ def update_transaction(txn_id):
         if t.get('id') == txn_id:
             updated = {**t, **body}
             updated['is_scheduled'] = updated.get('date', today) > today
+            # Learn from category change
+            if body.get('category') and body['category'] != t.get('category'):
+                desc = updated.get('description', t.get('description', ''))
+                learn_category_rule(data, desc, body['category'])
             data['transactions'][i] = updated
             save_data(data)
             return jsonify({'ok': True})
@@ -1153,6 +1225,83 @@ def bulk_delete_transactions():
     save_data(data)
     return jsonify({'ok': True, 'deleted': before - len(data['transactions'])})
 
+# ─── Category Memory API ─────────────────────────────────────────────────────
+
+@app.route('/api/category-suggest')
+def api_category_suggest():
+    """Suggest a category for a description based on learned rules + keywords."""
+    desc = request.args.get('description', '')
+    data = load_data()
+    result = suggest_category(data, desc)
+    return jsonify(result)
+
+@app.route('/api/category-rules')
+def api_category_rules():
+    """List all learned category rules."""
+    data = load_data()
+    rules = data.get('category_rules_learned', [])
+    # Sort by count descending (most-used first)
+    rules_sorted = sorted(rules, key=lambda r: r.get('count', 1), reverse=True)
+    return jsonify(rules_sorted)
+
+@app.route('/api/category-rules/<rule_id>', methods=['DELETE'])
+def api_delete_category_rule(rule_id):
+    """Delete a learned category rule."""
+    data = load_data()
+    rules = data.get('category_rules_learned', [])
+    data['category_rules_learned'] = [r for r in rules if r.get('id') != rule_id]
+    save_data(data)
+    return jsonify({'ok': True})
+
+@app.route('/api/transactions/find-similar', methods=['POST'])
+def api_find_similar():
+    """Find transactions with similar descriptions to a given one."""
+    body = request.json or {}
+    description = body.get('description', '')
+    exclude_id = body.get('exclude_id', '')
+    if not description:
+        return jsonify({'matches': []})
+    pattern = _normalize_description(description)
+    if not pattern or len(pattern) < 3:
+        return jsonify({'matches': []})
+    data = load_data()
+    matches = []
+    for txn in data.get('transactions', []):
+        if txn.get('id') == exclude_id:
+            continue
+        txn_norm = _normalize_description(txn.get('description', ''))
+        if txn_norm and (pattern in txn_norm or txn_norm in pattern):
+            matches.append(txn)
+    return jsonify({'matches': matches, 'pattern': pattern, 'count': len(matches)})
+
+@app.route('/api/transactions/bulk-recategorize', methods=['POST'])
+def api_bulk_recategorize():
+    """Bulk update category for all transactions matching a description pattern."""
+    body = request.json or {}
+    description = body.get('description', '')
+    new_category = body.get('category', '')
+    exclude_id = body.get('exclude_id', '')
+    if not description or not new_category:
+        return jsonify({'error': 'description and category required'}), 400
+    pattern = _normalize_description(description)
+    if not pattern or len(pattern) < 3:
+        return jsonify({'updated': 0})
+    data = load_data()
+    updated = 0
+    for txn in data.get('transactions', []):
+        if txn.get('id') == exclude_id:
+            continue
+        txn_norm = _normalize_description(txn.get('description', ''))
+        if txn_norm and (pattern in txn_norm or txn_norm in pattern):
+            if txn.get('category') != new_category:
+                txn['category'] = new_category
+                updated += 1
+    # Learn the rule
+    learn_category_rule(data, description, new_category)
+    save_data(data)
+    return jsonify({'ok': True, 'updated': updated})
+
+
 @app.route('/api/accounts', methods=['GET'])
 def get_accounts():
     return jsonify(load_data().get('accounts', []))
@@ -1166,11 +1315,35 @@ def add_account():
         'name': body.get('name', 'Account'),
         'bank': body.get('bank', ''),
         'currency': body.get('currency', 'GBP'),
-        'account_type': body.get('account_type', 'current')
+        'account_type': body.get('account_type', 'current'),
+        'balance': float(body.get('balance', 0)),
     }
+    # Credit card specific fields
+    acc_type = (acc['account_type'] or '').lower()
+    if acc_type in ('credit', 'credit_card', 'credit card'):
+        acc['credit_limit'] = float(body.get('credit_limit', 0))
+        acc['statement_balance'] = float(body.get('statement_balance', 0))
+        acc['payment_due_date'] = body.get('payment_due_date', '')  # day of month (1-31) or ISO date
+        acc['minimum_payment'] = float(body.get('minimum_payment', 0))
     data.setdefault('accounts', []).append(acc)
     save_data(data)
     return jsonify({'ok': True, 'account': acc})
+
+@app.route('/api/accounts/<acc_id>', methods=['PUT'])
+def update_account(acc_id):
+    data = load_data()
+    body = request.json or {}
+    for acc in data.get('accounts', []):
+        if acc.get('id') == acc_id:
+            for field in ('name', 'bank', 'currency', 'account_type', 'payment_due_date'):
+                if field in body:
+                    acc[field] = body[field]
+            for field in ('balance', 'credit_limit', 'statement_balance', 'minimum_payment'):
+                if field in body:
+                    acc[field] = float(body[field])
+            save_data(data)
+            return jsonify({'ok': True, 'account': acc})
+    return jsonify({'ok': False, 'error': 'Account not found'}), 404
 
 @app.route('/api/accounts/<acc_id>', methods=['DELETE'])
 def delete_account(acc_id):
@@ -1238,13 +1411,17 @@ Return ONLY a JSON array."""}]
         today = datetime.now().strftime('%Y-%m-%d')
         for t in parsed:
             txn_date = t.get('date', '')
+            desc = t.get('description', '')
+            # Use memory-based categorization, fall back to AI suggestion
+            mem_cat = categorise_with_memory(data, desc)
+            cat = mem_cat if mem_cat != 'Other' else t.get('category', 'Other')
             new_txns.append({
                 'id': str(uuid.uuid4()),
                 'date': txn_date,
-                'description': t.get('description', ''),
+                'description': desc,
                 'amount': float(t.get('amount', 0)),
                 'type': t.get('type', 'debit'),
-                'category': t.get('category', 'Other'),
+                'category': cat,
                 'currency': currency,
                 'account_id': account_id,
                 'bank': bank,
@@ -2004,6 +2181,448 @@ def spending_analytics():
         'category_budgets': budgets,
         'monthly_category_spend': {m: {k: round(v, 2) for k, v in cats.items()} for m, cats in monthly_cat_spend.items()},
     })
+
+# ─── Budget Pots API ─────────────────────────────────────────────────────────
+
+@app.route('/api/budget-summary')
+def api_budget_summary():
+    """Per-category budget pots: budget, spent THIS month, remaining, daily allowance, status."""
+    data = load_data()
+    rates = get_exchange_rates()
+    now = datetime.now()
+    current_month = now.strftime('%Y-%m')
+    today_str = now.strftime('%Y-%m-%d')
+    days_in_month = (datetime(now.year, now.month % 12 + 1, 1) - timedelta(days=1)).day if now.month < 12 else 31
+    days_left = days_in_month - now.day + 1
+
+    # Sum spending per category this month
+    cat_spend = {}
+    for t in data.get('transactions', []):
+        if t.get('type') != 'debit':
+            continue
+        if t.get('date', '')[:7] != current_month:
+            continue
+        if t.get('date', '') > today_str:
+            continue  # skip future/scheduled
+        amt = to_gbp(t.get('amount', 0), t.get('currency', 'GBP'), rates)
+        cat = t.get('category', 'Other')
+        cat_spend[cat] = cat_spend.get(cat, 0) + amt
+
+    user_cats = data.get('user_categories', [])
+    pots = []
+    total_budgeted = 0
+    total_spent = 0
+    over_budget_cats = []
+
+    for uc in user_cats:
+        if uc.get('archived'):
+            continue
+        budget = float(uc.get('budget_monthly', 0))
+        if budget <= 0:
+            continue
+        name = uc.get('name', '')
+        spent = round(cat_spend.get(name, 0), 2)
+        remaining = round(budget - spent, 2)
+        pct = round(spent / budget * 100, 1) if budget > 0 else 0
+
+        if pct > 100:
+            status = 'over'
+            over_budget_cats.append(name)
+        elif pct > 80:
+            status = 'warning'
+        else:
+            status = 'on_track'
+
+        daily_allowance = round(remaining / days_left, 2) if days_left > 0 and remaining > 0 else 0
+
+        pots.append({
+            'category': name,
+            'icon': uc.get('icon', '📦'),
+            'budget': budget,
+            'spent': spent,
+            'remaining': remaining,
+            'pct': pct,
+            'status': status,
+            'daily_allowance': daily_allowance,
+            'days_left': days_left,
+        })
+        total_budgeted += budget
+        total_spent += spent
+
+    # Unbudgeted categories with spending this month
+    budgeted_names = {p['category'] for p in pots}
+    unbudgeted = []
+    for cat, spent in cat_spend.items():
+        if cat not in budgeted_names and spent > 0:
+            icon = '📦'
+            for uc in user_cats:
+                if uc.get('name') == cat:
+                    icon = uc.get('icon', '📦')
+                    break
+            unbudgeted.append({
+                'category': cat,
+                'icon': icon,
+                'spent': round(spent, 2),
+            })
+    unbudgeted.sort(key=lambda x: -x['spent'])
+
+    return jsonify({
+        'pots': sorted(pots, key=lambda p: -p['pct']),
+        'total_budgeted': round(total_budgeted, 2),
+        'total_spent': round(total_spent, 2),
+        'total_remaining': round(total_budgeted - total_spent, 2),
+        'overall_pct': round(total_spent / total_budgeted * 100, 1) if total_budgeted > 0 else 0,
+        'days_left': days_left,
+        'current_month': current_month,
+        'over_budget': over_budget_cats,
+        'unbudgeted': unbudgeted,
+    })
+
+@app.route('/api/budget-pots', methods=['POST'])
+def api_set_budget():
+    """Set or update budget for a category."""
+    data = load_data()
+    body = request.json or {}
+    cat_name = body.get('category', '')
+    budget = float(body.get('budget', 0))
+    if not cat_name:
+        return jsonify({'error': 'category required'}), 400
+    user_cats = data.get('user_categories', [])
+    found = False
+    for uc in user_cats:
+        if uc.get('name') == cat_name:
+            uc['budget_monthly'] = budget
+            found = True
+            break
+    if not found:
+        # Create a new user category with this budget
+        user_cats.append({
+            'id': f'cat_{len(user_cats):03d}',
+            'name': cat_name,
+            'icon': CATEGORY_ICONS.get(cat_name, '📦'),
+            'type': 'expense',
+            'budget_monthly': budget,
+            'archived': False,
+            'parent': None,
+        })
+    data['user_categories'] = user_cats
+    save_data(data)
+    return jsonify({'ok': True})
+
+
+# ─── Financial Intelligence API ──────────────────────────────────────────────
+
+@app.route('/api/financial-health')
+def api_financial_health():
+    """Financial health score (0-100) from 5 weighted components."""
+    data = load_data()
+    rates = get_exchange_rates()
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+
+    # Gather monthly data for the last 6 months
+    months = []
+    for i in range(6):
+        dt = now - timedelta(days=30 * i)
+        months.append(dt.strftime('%Y-%m'))
+
+    monthly_income = {}
+    monthly_spend = {}
+    monthly_cat_spend = {}
+    for t in data.get('transactions', []):
+        m = t.get('date', '')[:7]
+        if m not in months:
+            continue
+        if t.get('date', '') > today_str:
+            continue
+        amt = to_gbp(t.get('amount', 0), t.get('currency', 'GBP'), rates)
+        if t.get('type') == 'credit':
+            monthly_income[m] = monthly_income.get(m, 0) + amt
+        elif t.get('type') == 'debit':
+            monthly_spend[m] = monthly_spend.get(m, 0) + amt
+            cat = t.get('category', 'Other')
+            if m not in monthly_cat_spend:
+                monthly_cat_spend[m] = {}
+            monthly_cat_spend[m][cat] = monthly_cat_spend[m].get(cat, 0) + amt
+
+    # Average monthly income & spend
+    active_months = [m for m in months if m in monthly_income or m in monthly_spend]
+    n = max(1, len(active_months))
+    avg_income = sum(monthly_income.get(m, 0) for m in months) / n
+    avg_spend = sum(monthly_spend.get(m, 0) for m in months) / n
+
+    # Component 1: Savings Rate (25%)
+    savings_rate = ((avg_income - avg_spend) / avg_income * 100) if avg_income > 0 else 0
+    # Score: 0% = 0pts, 10% = 50pts, 20%+ = 100pts
+    savings_score = min(100, max(0, savings_rate * 5))
+
+    # Component 2: Emergency Fund (25%)
+    # Liquid assets = sum of debit account balances
+    liquid_assets = sum(
+        float(a.get('balance', 0))
+        for a in data.get('accounts', [])
+        if (a.get('account_type', '') or '').lower() not in ('credit', 'credit_card', 'credit card')
+    )
+    emergency_months = (liquid_assets / avg_spend) if avg_spend > 0 else 12
+    # Score: 0 months = 0pts, 3 months = 60pts, 6+ months = 100pts
+    emergency_score = min(100, max(0, emergency_months / 6 * 100))
+
+    # Component 3: Debt-to-Income (20%)
+    debt_payments = 0
+    debt_cats = {'Rent/Mortgage'}
+    for m in months[:3]:
+        for cat in debt_cats:
+            debt_payments += monthly_cat_spend.get(m, {}).get(cat, 0)
+    # Add credit card statement balances
+    credit_obligations = sum(
+        float(a.get('statement_balance', 0))
+        for a in data.get('accounts', [])
+        if (a.get('account_type', '') or '').lower() in ('credit', 'credit_card', 'credit card')
+    )
+    avg_debt_payment = debt_payments / max(1, min(3, len(months)))
+    dti_ratio = (avg_debt_payment / avg_income * 100) if avg_income > 0 else 0
+    # Score: 0% DTI = 100pts, 30% = 50pts, 50%+ = 0pts
+    dti_score = max(0, min(100, 100 - dti_ratio * 2))
+
+    # Component 4: Spending Trend (15%)
+    # Compare last 3 months vs prior 3 months
+    recent = months[:3]
+    prior = months[3:6]
+    recent_avg = sum(monthly_spend.get(m, 0) for m in recent) / max(1, sum(1 for m in recent if m in monthly_spend))
+    prior_avg = sum(monthly_spend.get(m, 0) for m in prior) / max(1, sum(1 for m in prior if m in monthly_spend))
+    if prior_avg > 0:
+        trend_pct = ((recent_avg - prior_avg) / prior_avg) * 100
+    else:
+        trend_pct = 0
+    # Score: -10% decrease = 100pts, 0% = 70pts, +20% increase = 0pts
+    trend_score = max(0, min(100, 70 - trend_pct * 3.5))
+
+    # Component 5: Budget Adherence (15%)
+    user_cats = data.get('user_categories', [])
+    current_month = now.strftime('%Y-%m')
+    budgeted = 0
+    on_track = 0
+    for uc in user_cats:
+        budget = float(uc.get('budget_monthly', 0))
+        if budget <= 0 or uc.get('archived'):
+            continue
+        budgeted += 1
+        spent = monthly_cat_spend.get(current_month, {}).get(uc['name'], 0)
+        # Prorate: are they on track for the month?
+        day_pct = now.day / 30
+        if spent <= budget * day_pct * 1.1:  # 10% buffer
+            on_track += 1
+    budget_score = (on_track / budgeted * 100) if budgeted > 0 else 50  # default 50 if no budgets set
+
+    # Weighted total
+    score = round(
+        savings_score * 0.25 +
+        emergency_score * 0.25 +
+        dti_score * 0.20 +
+        trend_score * 0.15 +
+        budget_score * 0.15
+    )
+    score = max(0, min(100, score))
+
+    # Grade
+    if score >= 90: grade = 'A'
+    elif score >= 75: grade = 'B'
+    elif score >= 60: grade = 'C'
+    elif score >= 40: grade = 'D'
+    else: grade = 'F'
+
+    # Cash runway
+    cash_runway = round(liquid_assets / avg_spend, 1) if avg_spend > 0 else 99
+
+    # Insights
+    insights = []
+    if savings_rate >= 20:
+        insights.append(f'Strong savings rate of {savings_rate:.0f}% — well above the recommended 20%')
+    elif savings_rate >= 10:
+        insights.append(f'Savings rate of {savings_rate:.0f}% is healthy but could improve toward 20%')
+    elif savings_rate > 0:
+        insights.append(f'Savings rate of {savings_rate:.0f}% is low — aim for at least 10-20%')
+    else:
+        insights.append('You\'re spending more than you earn — review expenses urgently')
+
+    if emergency_months >= 6:
+        insights.append(f'Emergency fund covers {emergency_months:.1f} months — excellent buffer')
+    elif emergency_months >= 3:
+        insights.append(f'Emergency fund covers {emergency_months:.1f} months — aim for 6 months')
+    else:
+        insights.append(f'Emergency fund only covers {emergency_months:.1f} months — build to 3-6 months')
+
+    if trend_pct > 10:
+        insights.append(f'Spending increased {trend_pct:.0f}% vs prior quarter — watch for lifestyle creep')
+    elif trend_pct < -5:
+        insights.append(f'Spending decreased {abs(trend_pct):.0f}% vs prior quarter — great discipline')
+
+    if credit_obligations > 0:
+        insights.append(f'Credit card obligations of £{credit_obligations:,.0f} — prioritise paying these off')
+
+    return jsonify({
+        'score': score,
+        'grade': grade,
+        'components': [
+            {'name': 'Savings Rate', 'score': round(savings_score), 'weight': 25, 'detail': f'{savings_rate:.1f}%'},
+            {'name': 'Emergency Fund', 'score': round(emergency_score), 'weight': 25, 'detail': f'{emergency_months:.1f} months'},
+            {'name': 'Debt-to-Income', 'score': round(dti_score), 'weight': 20, 'detail': f'{dti_ratio:.1f}%'},
+            {'name': 'Spending Trend', 'score': round(trend_score), 'weight': 15, 'detail': f'{trend_pct:+.1f}%'},
+            {'name': 'Budget Adherence', 'score': round(budget_score), 'weight': 15, 'detail': f'{on_track}/{budgeted} on track' if budgeted > 0 else 'No budgets set'},
+        ],
+        'cash_runway_months': cash_runway,
+        'savings_rate': round(savings_rate, 1),
+        'avg_monthly_income': round(avg_income, 2),
+        'avg_monthly_spend': round(avg_spend, 2),
+        'liquid_assets': round(liquid_assets, 2),
+        'credit_obligations': round(credit_obligations, 2),
+        'insights': insights,
+    })
+
+
+@app.route('/api/spending-behavior')
+def api_spending_behavior():
+    """Behavioral spending analysis: day-of-week patterns, category velocity, impulse detection."""
+    data = load_data()
+    rates = get_exchange_rates()
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+
+    # Last 3 months of transactions
+    months_3 = [(now - timedelta(days=30 * i)).strftime('%Y-%m') for i in range(3)]
+    months_6 = [(now - timedelta(days=30 * i)).strftime('%Y-%m') for i in range(6)]
+
+    txns = []
+    for t in data.get('transactions', []):
+        if t.get('type') != 'debit':
+            continue
+        if t.get('date', '') > today_str:
+            continue
+        m = t.get('date', '')[:7]
+        if m not in months_6:
+            continue
+        tx = dict(t)
+        tx['amount_gbp'] = to_gbp(tx.get('amount', 0), tx.get('currency', 'GBP'), rates)
+        try:
+            tx['_dt'] = datetime.strptime(tx.get('date', ''), '%Y-%m-%d')
+        except:
+            continue
+        txns.append(tx)
+
+    # Day-of-week spending pattern
+    dow_spend = {i: 0 for i in range(7)}
+    dow_count = {i: 0 for i in range(7)}
+    dow_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    for tx in txns:
+        if tx.get('date', '')[:7] in months_3:
+            d = tx['_dt'].weekday()
+            dow_spend[d] += tx['amount_gbp']
+            dow_count[d] += 1
+
+    weeks = max(1, len(set(tx.get('date', '')[:7] for tx in txns if tx.get('date', '')[:7] in months_3))) * 4.33 / 3
+    dow_pattern = [
+        {'day': dow_names[i], 'avg_spend': round(dow_spend[i] / max(1, weeks), 2), 'txn_count': dow_count[i]}
+        for i in range(7)
+    ]
+
+    # Category velocity: month-over-month change per category
+    recent_3 = months_3
+    prior_3 = months_6[3:]
+    cat_recent = {}
+    cat_prior = {}
+    for tx in txns:
+        cat = tx.get('category', 'Other')
+        m = tx.get('date', '')[:7]
+        if m in recent_3:
+            cat_recent[cat] = cat_recent.get(cat, 0) + tx['amount_gbp']
+        elif m in prior_3:
+            cat_prior[cat] = cat_prior.get(cat, 0) + tx['amount_gbp']
+
+    all_cats = set(list(cat_recent.keys()) + list(cat_prior.keys()))
+    category_velocity = []
+    for cat in all_cats:
+        r = cat_recent.get(cat, 0) / max(1, sum(1 for m in recent_3 if any(tx.get('date', '')[:7] == m and tx.get('category') == cat for tx in txns)))
+        p = cat_prior.get(cat, 0) / max(1, sum(1 for m in prior_3 if any(tx.get('date', '')[:7] == m and tx.get('category') == cat for tx in txns)))
+        if p > 0:
+            change = round((r - p) / p * 100, 1)
+        elif r > 0:
+            change = 100
+        else:
+            change = 0
+        if abs(change) > 5 and (r > 20 or p > 20):
+            category_velocity.append({
+                'category': cat,
+                'recent_avg': round(r, 2),
+                'prior_avg': round(p, 2),
+                'change_pct': change,
+                'direction': 'up' if change > 0 else 'down',
+            })
+    category_velocity.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+
+    # Impulse detection: one-off high-value discretionary transactions
+    discretionary = {'Shopping', 'Entertainment', 'Food & Dining', 'Travel', 'Personal Care'}
+    impulses = []
+    for tx in txns:
+        if tx.get('category') not in discretionary:
+            continue
+        if tx.get('date', '')[:7] not in months_3:
+            continue
+        cat = tx.get('category', 'Other')
+        cat_avg = cat_recent.get(cat, 0) / max(1, sum(1 for t2 in txns if t2.get('category') == cat and t2.get('date', '')[:7] in months_3))
+        # If single transaction is > 3x the average per-transaction amount
+        if tx['amount_gbp'] > max(50, cat_avg * 3):
+            impulses.append({
+                'date': tx.get('date', ''),
+                'description': tx.get('description', ''),
+                'amount': round(tx['amount_gbp'], 2),
+                'category': cat,
+                'vs_avg': round(tx['amount_gbp'] / max(1, cat_avg), 1),
+            })
+    impulses.sort(key=lambda x: -x['amount'])
+
+    # Behavioral badges
+    badges = []
+    if dow_pattern:
+        weekend_spend = sum(d['avg_spend'] for d in dow_pattern if d['day'] in ('Sat', 'Sun'))
+        weekday_spend = sum(d['avg_spend'] for d in dow_pattern if d['day'] not in ('Sat', 'Sun'))
+        if weekend_spend > weekday_spend * 0.6:
+            badges.append({'label': 'Weekend Spender', 'icon': '🎉', 'detail': f'Weekend spending is {round(weekend_spend / max(1, weekday_spend) * 100)}% of weekday'})
+
+    if len(impulses) == 0:
+        badges.append({'label': 'Disciplined Buyer', 'icon': '🎯', 'detail': 'No impulse purchases detected'})
+    elif len(impulses) > 3:
+        badges.append({'label': 'Impulse Alert', 'icon': '⚡', 'detail': f'{len(impulses)} large discretionary purchases'})
+
+    up_cats = [v for v in category_velocity if v['direction'] == 'up']
+    down_cats = [v for v in category_velocity if v['direction'] == 'down']
+    if len(down_cats) > len(up_cats):
+        badges.append({'label': 'Cost Cutter', 'icon': '✂️', 'detail': f'{len(down_cats)} categories trending down'})
+
+    # Spending insight strings
+    spend_insights = []
+    if dow_pattern:
+        max_day = max(dow_pattern, key=lambda d: d['avg_spend'])
+        min_day = min(dow_pattern, key=lambda d: d['avg_spend'])
+        if max_day['avg_spend'] > min_day['avg_spend'] * 1.5 and max_day['avg_spend'] > 10:
+            spend_insights.append(f"You spend most on {max_day['day']}s (£{max_day['avg_spend']:.0f} avg)")
+
+    for v in category_velocity[:3]:
+        direction = '↑' if v['direction'] == 'up' else '↓'
+        spend_insights.append(f"{v['category']} {direction} {abs(v['change_pct']):.0f}% vs prior quarter")
+
+    if weekend_spend > 0 and weekday_spend > 0:
+        ratio = weekend_spend / (weekend_spend + weekday_spend) * 100
+        if ratio > 35:
+            spend_insights.append(f'{ratio:.0f}% of spending happens on weekends')
+
+    return jsonify({
+        'day_of_week': dow_pattern,
+        'category_velocity': category_velocity[:10],
+        'impulse_purchases': impulses[:10],
+        'badges': badges,
+        'insights': spend_insights,
+    })
+
 
 @app.route('/api/investments', methods=['POST'])
 def update_investments():
@@ -3445,6 +4064,88 @@ def categorise_by_keywords(description):
     return 'Other'
 
 
+# ─── Categorization Memory ───────────────────────────────────────────────────
+
+def _normalize_description(desc):
+    """Normalize a transaction description for pattern matching."""
+    import re
+    norm = desc.lower().strip()
+    # Remove dates, reference numbers, amounts
+    norm = re.sub(r'\b\d{2}[/-]\d{2}[/-]\d{2,4}\b', '', norm)
+    norm = re.sub(r'\b[A-Z0-9]{8,}\b', '', norm, flags=re.IGNORECASE)
+    norm = re.sub(r'£[\d,.]+', '', norm)
+    norm = re.sub(r'\$[\d,.]+', '', norm)
+    norm = re.sub(r'\s+', ' ', norm).strip()
+    return norm
+
+
+def learn_category_rule(data, description, category):
+    """Learn a category rule from a user's manual categorization."""
+    if not description or not category or category == 'Other':
+        return
+    pattern = _normalize_description(description)
+    if not pattern or len(pattern) < 3:
+        return
+    rules = data.setdefault('category_rules_learned', [])
+    # Upsert: update existing rule or add new one
+    for rule in rules:
+        if rule['description_pattern'] == pattern:
+            rule['category'] = category
+            rule['count'] = rule.get('count', 1) + 1
+            rule['last_applied'] = datetime.now().strftime('%Y-%m-%d')
+            return
+    rules.append({
+        'id': str(uuid.uuid4()),
+        'description_pattern': pattern,
+        'category': category,
+        'count': 1,
+        'last_applied': datetime.now().strftime('%Y-%m-%d'),
+    })
+
+
+def categorise_with_memory(data, description):
+    """Categorise using learned rules first, then fall back to keyword matching."""
+    if not description:
+        return 'Other'
+    norm = _normalize_description(description)
+    # Check learned rules (most-used first for better matching)
+    rules = data.get('category_rules_learned', [])
+    best_match = None
+    best_count = 0
+    for rule in rules:
+        pat = rule.get('description_pattern', '')
+        if pat and (pat in norm or norm in pat):
+            if rule.get('count', 1) > best_count:
+                best_match = rule
+                best_count = rule.get('count', 1)
+    if best_match:
+        return best_match['category']
+    # Fall back to keyword rules
+    return categorise_by_keywords(description)
+
+
+def suggest_category(data, description):
+    """Return category suggestion and source for a description."""
+    if not description:
+        return {'category': 'Other', 'source': 'default'}
+    norm = _normalize_description(description)
+    rules = data.get('category_rules_learned', [])
+    best_match = None
+    best_count = 0
+    for rule in rules:
+        pat = rule.get('description_pattern', '')
+        if pat and (pat in norm or norm in pat):
+            if rule.get('count', 1) > best_count:
+                best_match = rule
+                best_count = rule.get('count', 1)
+    if best_match:
+        return {'category': best_match['category'], 'source': 'learned', 'pattern': best_match['description_pattern'], 'count': best_count}
+    kw_cat = categorise_by_keywords(description)
+    if kw_cat != 'Other':
+        return {'category': kw_cat, 'source': 'keywords'}
+    return {'category': 'Other', 'source': 'default'}
+
+
 # ─── TrueLayer Open Banking Integration ──────────────────────────────────────
 #
 # Setup (one-time):
@@ -3792,8 +4493,8 @@ def tl_sync():
                     desc      = txn.get('description', txn.get('merchant_name', 'Unknown'))
                     txn_date  = txn.get('timestamp', today)[:10]
 
-                    # Auto-categorise using shared keyword rules
-                    category = categorise_by_keywords(desc)
+                    # Auto-categorise using memory first, then keyword rules
+                    category = categorise_with_memory(data, desc)
 
                     new_txn = {
                         'id':                str(uuid.uuid4()),
@@ -4465,8 +5166,13 @@ def plaid_post(endpoint, payload=None):
         return None, str(e)
 
 
-def map_plaid_category(plaid_cat, description=''):
+def map_plaid_category(plaid_cat, description='', data=None):
     """Map Plaid's personal_finance_category to app categories."""
+    # Check memory first if data is available
+    if data:
+        mem_cat = categorise_with_memory(data, description)
+        if mem_cat != 'Other':
+            return mem_cat
     if plaid_cat:
         primary = plaid_cat.get('primary', '') if isinstance(plaid_cat, dict) else str(plaid_cat)
         mapped = PLAID_CATEGORY_MAP.get(primary)
@@ -4650,7 +5356,7 @@ def plaid_sync():
 
                 # Categorise
                 plaid_cat = txn.get('personal_finance_category')
-                category  = map_plaid_category(plaid_cat, desc)
+                category  = map_plaid_category(plaid_cat, desc, data)
 
                 new_txn = {
                     'id':                str(uuid.uuid4()),

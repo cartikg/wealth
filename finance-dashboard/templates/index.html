@@ -429,19 +429,87 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 .holding-val { text-align: right; }
 .holding-gain { font-size: 11px; margin-top: 1px; }
 
-/* Account cards */
-.account-card {
-  background: var(--surface2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px; cursor: pointer;
-  transition: border-color 0.15s;
+/* Account list rows */
+.acct-list { display:flex; flex-direction:column; gap:2px; }
+.acct-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: default;
 }
-.account-card:hover { border-color: var(--gold); }
-.account-card.selected { border-color: var(--gold); background: var(--gold-dim); }
-.account-name { font-weight: 500; font-size: 14px; }
-.account-bank { font-size: 11px; color: var(--text3); }
-.account-stats { display: flex; justify-content: space-between; margin-top: 12px; }
-.account-stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; }
-.account-stat-value { font-size: 14px; font-weight: 500; margin-top: 2px; }
+.acct-row:hover { border-color: var(--gold); background: rgba(255,255,255,0.02); }
+.acct-logo {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 20px; font-weight: 700;
+  background: var(--surface); border: 1px solid var(--border);
+  overflow: hidden;
+}
+.acct-logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }
+.acct-info { flex: 1; min-width: 0; }
+.acct-info-name { font-weight: 600; font-size: 13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.acct-info-sub { font-size: 11px; color: var(--text3); margin-top: 1px; display:flex; align-items:center; gap:6px; }
+.acct-bal { text-align: right; flex-shrink: 0; }
+.acct-bal-amount { font-family: var(--font-display); font-size: 15px; font-weight: 600; }
+.acct-bal-sub { font-size: 10px; color: var(--text3); margin-top: 1px; }
+.acct-actions { display:flex; gap:4px; opacity:0; transition:opacity 0.15s; }
+.acct-row:hover .acct-actions { opacity:1; }
+.acct-due-badge {
+  display:inline-flex; align-items:center; gap:3px;
+  padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;
+}
+.acct-due-urgent { background: rgba(239,68,68,0.12); color: #ef4444; }
+.acct-due-soon { background: rgba(251,191,36,0.12); color: #fbbf24; }
+.acct-due-ok { background: rgba(52,211,153,0.12); color: #34d399; }
+/* Budget Pots */
+.budget-pots-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+.budget-pot {
+  background: var(--surface2); border:1px solid var(--border); border-radius:12px;
+  padding:14px; transition: border-color 0.15s;
+}
+.budget-pot:hover { border-color: var(--gold); }
+.budget-pot-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.budget-pot-icon { font-size:20px; }
+.budget-pot-name { font-size:13px; font-weight:600; flex:1; }
+.budget-pot-status { font-size:10px; font-weight:600; padding:2px 6px; border-radius:8px; }
+.budget-pot-bar { height:6px; border-radius:3px; background:rgba(255,255,255,0.06); overflow:hidden; margin-bottom:8px; }
+.budget-pot-fill { height:100%; border-radius:3px; transition: width 0.4s ease; }
+.budget-pot-stats { display:flex; justify-content:space-between; font-size:11px; color:var(--text3); }
+.budget-pot-edit { cursor:pointer; opacity:0; transition:opacity 0.15s; font-size:11px; color:var(--text3); }
+.budget-pot:hover .budget-pot-edit { opacity:1; }
+
+/* Financial Health */
+.fh-gauge-wrap { display:flex; align-items:center; gap:24px; margin-bottom:16px; }
+.fh-components { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px; margin-bottom:14px; }
+.fh-comp {
+  background: var(--surface2); border:1px solid var(--border); border-radius:8px;
+  padding:10px 12px; font-size:12px;
+}
+.fh-comp-bar { height:4px; border-radius:2px; background:rgba(255,255,255,0.06); margin-top:6px; overflow:hidden; }
+.fh-comp-fill { height:100%; border-radius:2px; }
+.fh-insights { display:flex; flex-direction:column; gap:6px; }
+.fh-insight { font-size:12px; color:var(--text2); padding:6px 10px; background:rgba(255,255,255,0.02); border-radius:6px; border-left:3px solid var(--gold); }
+
+/* Bulk recategorize toast */
+.recat-toast {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:9999;
+  background:var(--surface); border:1px solid var(--gold); border-radius:12px;
+  padding:14px 20px; display:flex; align-items:center; gap:12px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.4); animation: slideUp 0.3s ease;
+}
+@keyframes slideUp { from { transform:translateX(-50%) translateY(20px); opacity:0; } to { transform:translateX(-50%) translateY(0); opacity:1; } }
+
+/* Spending behavior badges */
+.behavior-badge {
+  display:inline-flex; align-items:center; gap:4px; padding:4px 10px;
+  border-radius:12px; font-size:11px; font-weight:600;
+  background:rgba(255,255,255,0.04); border:1px solid var(--border);
+}
+
+/* Legacy card compat */
+.account-card { display:none; }
+.account-name, .account-bank, .account-stats, .account-stat-label, .account-stat-value { }
 
 /* Summary pills */
 .summary-row {
@@ -904,6 +972,24 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       <!-- Summary pills -->
       <div class="summary-row" id="txn-summary"></div>
 
+      <!-- Financial Health Score -->
+      <div class="card" id="financial-health-card" style="margin-bottom:16px;display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-label">🏥 Financial Health</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadFinancialHealth()" style="font-size:11px">↻ Refresh</button>
+        </div>
+        <div id="financial-health-body"></div>
+      </div>
+
+      <!-- Budget Pots -->
+      <div class="card" id="budget-pots-card" style="margin-bottom:16px;display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-label">🏦 Budget Pots</div>
+          <button class="btn btn-ghost btn-sm" onclick="openBudgetSetup()" style="font-size:11px">+ Set Budget</button>
+        </div>
+        <div id="budget-pots-body"></div>
+      </div>
+
       <!-- Filter bar -->
       <div class="filter-bar">
         <input type="text" class="search-input" id="txn-search" placeholder="🔍  Search transactions..." oninput="applyFilters()">
@@ -1003,147 +1089,142 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
     <!-- ── ACCOUNTS ──────────────────────────────────────────────────────── -->
     <div id="section-accounts" class="section">
 
-      <!-- True Balance Summary -->
-      <div id="accounts-balance-summary" class="card" style="margin-bottom:20px;border-left:3px solid var(--teal);display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">
+      <!-- ═══ Balance Overview Cards ═══ -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px" id="accounts-kpi-row">
+        <div class="card" style="padding:18px;border-left:3px solid var(--teal)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">True Balance</div>
+          <div style="font-family:var(--font-display);font-size:26px;font-weight:700;margin-top:4px" id="accounts-true-balance" class="privacy-blur">£—</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">After credit obligations</div>
+        </div>
+        <div class="card" style="padding:18px;border-left:3px solid var(--gold)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Cash & Savings</div>
+          <div style="font-family:var(--font-display);font-size:22px;font-weight:600;color:var(--teal);margin-top:4px" id="accounts-savings-current" class="privacy-blur">£—</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px" id="accounts-debit-count">0 accounts</div>
+        </div>
+        <div class="card" style="padding:18px;border-left:3px solid var(--rose)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Credit Owed</div>
+          <div style="font-family:var(--font-display);font-size:22px;font-weight:600;color:var(--rose);margin-top:4px" id="accounts-credit-cards" class="privacy-blur">£—</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px" id="accounts-credit-count">0 cards</div>
+        </div>
+        <div class="card" style="padding:18px;border-left:3px solid rgba(139,92,246,0.6)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Projected Balance</div>
+          <div style="font-family:var(--font-display);font-size:22px;font-weight:600;margin-top:4px" id="accounts-projected" class="privacy-blur">£—</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">After all payments due</div>
+        </div>
+      </div>
+
+      <!-- ═══ Action Bar ═══ -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+        <span id="tl-env-badge" style="display:none;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px"></span>
+        <div style="flex:1"></div>
+        <button id="tl-sync-btn" class="btn btn-teal btn-sm" onclick="syncAllBanks()" style="display:none">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Sync All
+        </button>
+        <button id="tl-connect-btn" class="btn btn-gold btn-sm" onclick="tlConnect()" style="display:none">+ Connect Bank</button>
+        <button id="plaid-connect-btn" class="btn btn-sm" onclick="plaidConnect()" style="display:none;background:rgba(0,220,127,0.12);color:#00dc7f;border:1px solid rgba(0,220,127,0.3)">+ Connect via Plaid</button>
+        <button class="btn btn-sm" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)" onclick="openModal('account-modal',null)">+ Add Account</button>
+      </div>
+
+      <!-- TrueLayer config warning (hidden unless unconfigured) -->
+      <div id="tl-not-configured" class="card" style="display:none;border-color:rgba(59,130,246,0.3);margin-bottom:20px">
+        <div style="display:flex;gap:16px;align-items:flex-start">
+          <div style="font-size:28px">⚠️</div>
           <div>
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:4px">True Balance</div>
-            <div style="font-family:var(--font-display);font-size:28px;font-weight:600" id="accounts-true-balance" class="privacy-blur">£—</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">Savings & Current minus Credit Cards</div>
-          </div>
-          <div style="display:flex;gap:24px;flex-wrap:wrap">
-            <div>
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Savings & Current</div>
-              <div style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--teal)" id="accounts-savings-current" class="privacy-blur">£—</div>
+            <div style="font-weight:600;font-size:15px;margin-bottom:6px">TrueLayer credentials not set</div>
+            <div style="color:var(--text3);font-size:13px;line-height:1.7">
+              To connect your bank accounts, you need a free TrueLayer developer account.<br>
+              <strong style="color:var(--text)">3-minute setup:</strong>
             </div>
-            <div>
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Credit Cards</div>
-              <div style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--rose)" id="accounts-credit-cards" class="privacy-blur">£—</div>
-            </div>
-            <div>
-              <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Manual Cash</div>
-              <div style="font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--gold)" id="accounts-manual-savings" class="privacy-blur">£—</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Connected Banks Section -->
-      <div id="accounts-banks-section">
-        <!-- Config warning -->
-        <div id="tl-not-configured" class="card" style="display:none;border-color:rgba(59,130,246,0.3);margin-bottom:20px">
-          <div style="display:flex;gap:16px;align-items:flex-start">
-            <div style="font-size:28px">⚠️</div>
-            <div>
-              <div style="font-weight:600;font-size:15px;margin-bottom:6px">TrueLayer credentials not set</div>
-              <div style="color:var(--text3);font-size:13px;line-height:1.7">
-                To connect your bank accounts, you need a free TrueLayer developer account.<br>
-                <strong style="color:var(--text)">3-minute setup:</strong>
-              </div>
-              <ol style="color:var(--text2);font-size:13px;margin:10px 0 0 18px;line-height:2">
-                <li>Go to <a href="https://console.truelayer.com" target="_blank" style="color:var(--gold)">console.truelayer.com</a> → create free account</li>
-                <li>Create an app → copy your <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_id</code> and <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_secret</code></li>
-                <li>Add redirect URI: <code style="background:var(--surface2);padding:2px 8px;border-radius:4px;color:var(--teal)">http://localhost:5000/api/truelayer/callback</code></li>
-                <li>Restart the app with env vars set (see README)</li>
-              </ol>
-              <div style="margin-top:12px;background:var(--surface2);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--teal)">
-                export TRUELAYER_CLIENT_ID=your_client_id<br>
-                export TRUELAYER_CLIENT_SECRET=your_client_secret<br>
-                export TRUELAYER_ENV=sandbox<br>
-                python app.py
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Action bar: env badge + sync + connect + add offline -->
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-          <span id="tl-env-badge" style="display:none;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px"></span>
-          <div style="flex:1"></div>
-          <button id="tl-sync-btn" class="btn btn-teal btn-sm" onclick="syncAllBanks()" style="display:none">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-            Sync All Banks
-          </button>
-          <button id="tl-connect-btn" class="btn btn-gold btn-sm" onclick="tlConnect()" style="display:none">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Connect Bank
-          </button>
-          <button id="plaid-connect-btn" class="btn btn-sm" onclick="plaidConnect()" style="display:none;background:rgba(0,220,127,0.12);color:#00dc7f;border:1px solid rgba(0,220,127,0.3)">
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Connect via Plaid
-          </button>
-          <button class="btn btn-sm" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border)" onclick="openModal('account-modal',null)">+ Add Offline Account</button>
-        </div>
-
-        <!-- Sync result banner -->
-        <div id="tl-sync-result" style="display:none;margin-bottom:16px"></div>
-
-        <!-- Connected banks grid -->
-        <div id="tl-connections-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:24px"></div>
-        <div id="plaid-connections-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin-bottom:24px"></div>
-
-        <!-- Synced accounts balances -->
-        <div id="tl-accounts-section" style="display:none">
-          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:14px">Live Account Balances</div>
-          <div id="tl-accounts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px"></div>
-        </div>
-
-        <!-- How it works (shown when no connections) -->
-        <div id="tl-how-it-works" style="display:none">
-          <div class="card" style="max-width:640px;margin:0 auto">
-            <div style="text-align:center;padding:8px 0 20px">
-              <div style="font-size:48px;margin-bottom:12px">🏦</div>
-              <div style="font-family:var(--font-display);font-size:24px;font-weight:600;margin-bottom:8px">Connect Your Banks</div>
-              <div style="color:var(--text3);font-size:13px;line-height:1.7;max-width:420px;margin:0 auto">
-                Securely link Monzo, Revolut, Barclays, HSBC, NatWest and 40+ UK banks.<br>
-                Transactions sync automatically. Read-only access only.
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
-              <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                <div style="font-size:24px;margin-bottom:6px">🔒</div>
-                <div style="font-size:12px;font-weight:600;margin-bottom:3px">Read-Only</div>
-                <div style="font-size:11px;color:var(--text3)">Cannot move money. View only.</div>
-              </div>
-              <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                <div style="font-size:24px;margin-bottom:6px">🏛️</div>
-                <div style="font-size:12px;font-weight:600;margin-bottom:3px">FCA Regulated</div>
-                <div style="font-size:11px;color:var(--text3)">TrueLayer is FCA authorised</div>
-              </div>
-              <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
-                <div style="font-size:24px;margin-bottom:6px">💸</div>
-                <div style="font-size:12px;font-weight:600;margin-bottom:3px">Free</div>
-                <div style="font-size:11px;color:var(--text3)">No cost for personal use</div>
-              </div>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:24px">
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟣 Monzo</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Revolut</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Barclays</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔴 HSBC</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟢 NatWest</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟠 Lloyds</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🟢 Starling</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">🔵 Santander</span>
-              <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px">+ 40 more</span>
+            <ol style="color:var(--text2);font-size:13px;margin:10px 0 0 18px;line-height:2">
+              <li>Go to <a href="https://console.truelayer.com" target="_blank" style="color:var(--gold)">console.truelayer.com</a> → create free account</li>
+              <li>Create an app → copy your <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_id</code> and <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">client_secret</code></li>
+              <li>Add redirect URI: <code style="background:var(--surface2);padding:2px 8px;border-radius:4px;color:var(--teal)">http://localhost:5000/api/truelayer/callback</code></li>
+              <li>Restart the app with env vars set (see README)</li>
+            </ol>
+            <div style="margin-top:12px;background:var(--surface2);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--teal)">
+              export TRUELAYER_CLIENT_ID=your_client_id<br>
+              export TRUELAYER_CLIENT_SECRET=your_client_secret<br>
+              export TRUELAYER_ENV=sandbox<br>
+              python app.py
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Offline Accounts -->
-      <div style="margin-top:20px">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-          <div style="font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--text2)" id="offline-accounts-label">Offline Accounts</div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllAccounts()">☑ Select All</button>
-            <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="acc-deselect-btn" onclick="deselectAllAccounts()">☐ Deselect All</button>
-            <span style="font-size:12px;color:var(--text3)" id="acc-bulk-count"></span>
-            <button class="btn btn-ghost btn-sm" id="acc-bulk-delete-btn" style="display:none;color:var(--rose)" onclick="bulkDeleteAccounts()">🗑 Delete Selected</button>
+      <!-- Sync result banner -->
+      <div id="tl-sync-result" style="display:none;margin-bottom:16px"></div>
+
+      <!-- Hidden grids for bank connection data (used by renderBanks) -->
+      <div id="tl-connections-grid" style="display:none"></div>
+      <div id="plaid-connections-grid" style="display:none"></div>
+      <div id="tl-accounts-section" style="display:none">
+        <div id="tl-accounts-grid"></div>
+      </div>
+
+      <!-- ═══ Debit Accounts (Current / Savings) ═══ -->
+      <div id="accounts-debit-section" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--teal)"></div>
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:600">Current & Savings</div>
+          <div style="font-size:12px;color:var(--text3);margin-left:4px" id="debit-section-total" class="privacy-blur"></div>
+        </div>
+        <div id="accounts-debit-list" class="acct-list"></div>
+      </div>
+
+      <!-- ═══ Credit Cards ═══ -->
+      <div id="accounts-credit-section" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--rose)"></div>
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:600">Credit Cards</div>
+          <div style="font-size:12px;color:var(--text3);margin-left:4px" id="credit-section-total" class="privacy-blur"></div>
+        </div>
+        <div id="accounts-credit-list" class="acct-list"></div>
+      </div>
+
+      <!-- ═══ Upcoming Payments Timeline ═══ -->
+      <div id="accounts-payments-section" style="display:none;margin-bottom:24px">
+        <div class="card" style="border-left:3px solid rgba(139,92,246,0.6)">
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:600;margin-bottom:12px">Upcoming Payments</div>
+          <div id="accounts-payments-timeline"></div>
+        </div>
+      </div>
+
+      <!-- How it works (shown when no connections and no accounts) -->
+      <div id="tl-how-it-works" style="display:none">
+        <div class="card" style="max-width:640px;margin:0 auto">
+          <div style="text-align:center;padding:8px 0 20px">
+            <div style="font-size:48px;margin-bottom:12px">🏦</div>
+            <div style="font-family:var(--font-display);font-size:24px;font-weight:600;margin-bottom:8px">Connect Your Banks</div>
+            <div style="color:var(--text3);font-size:13px;line-height:1.7;max-width:420px;margin:0 auto">
+              Securely link Monzo, Revolut, Barclays, HSBC, NatWest and 40+ UK banks.<br>
+              Transactions sync automatically. Read-only access only.
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
+              <div style="font-size:24px;margin-bottom:6px">🔒</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:3px">Read-Only</div>
+              <div style="font-size:11px;color:var(--text3)">Cannot move money. View only.</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
+              <div style="font-size:24px;margin-bottom:6px">🏛️</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:3px">FCA Regulated</div>
+              <div style="font-size:11px;color:var(--text3)">TrueLayer is FCA authorised</div>
+            </div>
+            <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center">
+              <div style="font-size:24px;margin-bottom:6px">💸</div>
+              <div style="font-size:12px;font-weight:600;margin-bottom:3px">Free</div>
+              <div style="font-size:11px;color:var(--text3)">No cost for personal use</div>
+            </div>
           </div>
         </div>
-        <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px"></div>
       </div>
+
+      <!-- Hidden elements for backward compat (bulk select still works) -->
+      <div id="offline-accounts-label" style="display:none"></div>
+      <div id="accounts-grid" style="display:none"></div>
+      <div id="accounts-balance-summary" style="display:none"></div>
     </div>
 
     <!-- ── INVESTMENTS ───────────────────────────────────────────────────── -->
@@ -2975,7 +3056,12 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
     </div>
     <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">Description</label>
-      <input class="form-input" id="txn-desc" type="text" placeholder="e.g. Tesco groceries, Salary, Netflix...">
+      <input class="form-input" id="txn-desc" type="text" placeholder="e.g. Tesco groceries, Salary, Netflix..." oninput="debounceCategorySuggest()">
+      <div id="txn-cat-suggest" style="display:none;margin-top:6px;font-size:11px;color:var(--teal);cursor:pointer" onclick="applyCategorySuggestion()">
+        <span style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);padding:2px 8px;border-radius:12px">
+          💡 Suggested: <strong id="txn-cat-suggest-name"></strong>
+        </span>
+      </div>
     </div>
     <div class="form-grid" style="margin-bottom:12px">
       <div class="form-group">
@@ -3067,12 +3153,42 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         </div>
         <div class="form-group">
           <label class="form-label">Type</label>
-          <select class="form-select" id="acc-type">
+          <select class="form-select" id="acc-type" onchange="accTypeChanged()">
             <option value="current">Current</option>
             <option value="savings">Savings</option>
             <option value="credit">Credit Card</option>
             <option value="investment">Investment</option>
           </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Balance</label>
+        <input class="form-input" id="acc-balance" type="number" step="0.01" placeholder="0.00">
+      </div>
+      <!-- Credit card specific fields -->
+      <div id="acc-credit-fields" style="display:none">
+        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:10px">Credit Card Details</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Credit Limit</label>
+              <input class="form-input" id="acc-credit-limit" type="number" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Statement Balance</label>
+              <input class="form-input" id="acc-stmt-balance" type="number" step="0.01" placeholder="0.00">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Payment Due Day (1-31)</label>
+              <input class="form-input" id="acc-due-date" type="number" min="1" max="31" placeholder="e.g. 15">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Minimum Payment</label>
+              <input class="form-input" id="acc-min-payment" type="number" step="0.01" placeholder="0.00">
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3366,6 +3482,8 @@ function renderAll() {
   renderNetWorth();
   renderForecast();
   renderTransactions();
+  loadFinancialHealth();
+  loadBudgetPots();
   renderAccounts();
   renderInvestments();
   renderMortgageTab();
@@ -3657,7 +3775,7 @@ function populateFilters() {
   const accOpts = accounts.map(a=>`<option value="${a.id}">${maskAccount(a.name)} (${a.currency})</option>`).join('');
   accSel.innerHTML = '<option value="">All Accounts</option>' + accOpts;
   csvAccSel.innerHTML = '<option value="">— Select Account —</option>' + accOpts;
-  txnAccSel.innerHTML = '<option value="">— No Account —</option>' + accOpts;
+  txnAccSel.innerHTML = accOpts || '<option value="">— No Account —</option>';
 
   // Category select
   const cats = D.categories_list || [];
@@ -3791,70 +3909,326 @@ function renderTransactions(txns) {
 }
 
 // ── Accounts ──────────────────────────────────────────────────────────────────
+// ── Bank Logo Map ──
+const BANK_LOGOS = {
+  'monzo': 'https://logo.clearbit.com/monzo.com',
+  'revolut': 'https://logo.clearbit.com/revolut.com',
+  'barclays': 'https://logo.clearbit.com/barclays.co.uk',
+  'hsbc': 'https://logo.clearbit.com/hsbc.co.uk',
+  'natwest': 'https://logo.clearbit.com/natwest.com',
+  'lloyds': 'https://logo.clearbit.com/lloydsbank.com',
+  'santander': 'https://logo.clearbit.com/santander.co.uk',
+  'starling': 'https://logo.clearbit.com/starlingbank.com',
+  'halifax': 'https://logo.clearbit.com/halifax.co.uk',
+  'nationwide': 'https://logo.clearbit.com/nationwide.co.uk',
+  'first direct': 'https://logo.clearbit.com/firstdirect.com',
+  'chase': 'https://logo.clearbit.com/chase.co.uk',
+  'metro bank': 'https://logo.clearbit.com/metrobankonline.co.uk',
+  'virgin money': 'https://logo.clearbit.com/virginmoney.com',
+  'amex': 'https://logo.clearbit.com/americanexpress.com',
+  'american express': 'https://logo.clearbit.com/americanexpress.com',
+  'hdfc': 'https://logo.clearbit.com/hdfcbank.com',
+  'icici': 'https://logo.clearbit.com/icicibank.com',
+  'sbi': 'https://logo.clearbit.com/sbi.co.in',
+  'axis': 'https://logo.clearbit.com/axisbank.com',
+  'kotak': 'https://logo.clearbit.com/kotak.com',
+  'citi': 'https://logo.clearbit.com/citibank.com',
+  'wise': 'https://logo.clearbit.com/wise.com',
+  'tesco': 'https://logo.clearbit.com/tescobank.com',
+  'marcus': 'https://logo.clearbit.com/marcus.co.uk',
+  'goldman': 'https://logo.clearbit.com/goldmansachs.com',
+};
+const BANK_COLORS = {
+  'monzo': '#FF5A54', 'revolut': '#0075EB', 'barclays': '#00AEEF',
+  'hsbc': '#DB0011', 'natwest': '#42145F', 'lloyds': '#006A4D',
+  'santander': '#EC0000', 'starling': '#7433FF', 'halifax': '#005B00',
+  'nationwide': '#003DA5', 'chase': '#117ACA', 'amex': '#006FCF',
+  'american express': '#006FCF', 'hdfc': '#004C8F', 'icici': '#F58220',
+  'sbi': '#22409A', 'wise': '#9FE870', 'citi': '#003B70',
+};
+
+function getBankColor(bankName) {
+  const k = (bankName || '').toLowerCase().trim();
+  for (const [key, color] of Object.entries(BANK_COLORS)) {
+    if (k.includes(key)) return color;
+  }
+  // Generate a consistent color from name hash
+  let hash = 0;
+  for (let i = 0; i < k.length; i++) hash = k.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 60%, 55%)`;
+}
+function hexToRgba(hex, alpha) {
+  hex = hex.replace('#','');
+  const r = parseInt(hex.substring(0,2),16), g = parseInt(hex.substring(2,4),16), b = parseInt(hex.substring(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Bank logo domains — map bank names to their website domains for favicon lookup
+const BANK_DOMAINS = {
+  'monzo': 'monzo.com', 'revolut': 'revolut.com', 'barclays': 'barclays.co.uk',
+  'hsbc': 'hsbc.co.uk', 'natwest': 'natwest.com', 'lloyds': 'lloydsbank.com',
+  'santander': 'santander.co.uk', 'starling': 'starlingbank.com',
+  'halifax': 'halifax.co.uk', 'nationwide': 'nationwide.co.uk',
+  'chase': 'chase.com', 'amex': 'americanexpress.com',
+  'american express': 'americanexpress.com', 'hdfc': 'hdfcbank.com',
+  'icici': 'icicibank.com', 'sbi': 'sbi.co.in', 'axis': 'axisbank.com',
+  'kotak': 'kotak.com', 'citi': 'citibank.com', 'wise': 'wise.com',
+  'virgin money': 'virginmoney.com', 'first direct': 'firstdirect.com',
+  'metro bank': 'metrobankonline.co.uk', 'tesco': 'tescobank.com',
+  'marcus': 'marcus.co.uk',
+};
+
+function getBankDomain(bankName) {
+  const k = (bankName || '').toLowerCase().trim();
+  for (const [key, domain] of Object.entries(BANK_DOMAINS)) {
+    if (k.includes(key)) return domain;
+  }
+  return null;
+}
+
+function bankLogoEl(bankName) {
+  const color = getBankColor(bankName);
+  const initial = (bankName || '?')[0].toUpperCase();
+  const bg = color.startsWith('hsl') ? color.replace('55%)', '15%)') : hexToRgba(color, 0.12);
+  const border = color.startsWith('hsl') ? color.replace('55%)', '25%)') : hexToRgba(color, 0.25);
+  const domain = getBankDomain(bankName);
+  if (domain) {
+    // data-bank-domain triggers async logo loading after render
+    return `<div class="acct-logo" data-bank-domain="${domain}" style="background:${bg};border-color:${border};color:${color};font-weight:700;font-size:16px">${initial}</div>`;
+  }
+  return `<div class="acct-logo" style="background:${bg};border-color:${border};color:${color};font-weight:700;font-size:16px">${initial}</div>`;
+}
+
+// Load bank logos asynchronously after DOM render
+function loadBankLogos() {
+  document.querySelectorAll('.acct-logo[data-bank-domain]').forEach(el => {
+    const domain = el.dataset.bankDomain;
+    if (!domain || el.dataset.logoLoaded) return;
+    el.dataset.logoLoaded = '1';
+    const img = new Image();
+    img.onload = () => {
+      // Only replace if we got a real image (not a 1x1 placeholder)
+      if (img.naturalWidth >= 16) {
+        el.style.background = '#fff';
+        el.textContent = '';
+        img.style.cssText = 'width:24px;height:24px;object-fit:contain';
+        el.appendChild(img);
+      }
+    };
+    img.src = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+  });
+}
+
+function accTypeChanged() {
+  const t = document.getElementById('acc-type').value;
+  const cf = document.getElementById('acc-credit-fields');
+  cf.style.display = (t === 'credit') ? '' : 'none';
+}
+
 function renderAccounts() {
   const accMap = D.account_summary || {};
-  const grid = document.getElementById('accounts-grid');
   const accounts = D.accounts || [];
   const t = D.totals || {};
 
-  // True Balance summary card
-  const summaryEl = document.getElementById('accounts-balance-summary');
-  if (t.has_connected_accounts || t.manual_savings > 0) {
-    summaryEl.style.display = '';
-    const trueBalColor = t.true_balance >= 0 ? 'var(--teal)' : 'var(--rose)';
-    document.getElementById('accounts-true-balance').style.color = trueBalColor;
-    set('accounts-true-balance', fmtGBP(t.true_balance || 0));
-    set('accounts-savings-current', fmtGBP(t.connected_savings_current || 0));
-    set('accounts-credit-cards', t.connected_credit_cards > 0 ? '-' + fmtGBP(t.connected_credit_cards) : fmtGBP(0));
-    set('accounts-manual-savings', fmtGBP(t.manual_savings || 0));
-  } else {
-    summaryEl.style.display = 'none';
+  // ── KPI cards ──
+  const trueBalColor = (t.true_balance || 0) >= 0 ? 'var(--teal)' : 'var(--rose)';
+  const tbEl = document.getElementById('accounts-true-balance');
+  if (tbEl) { tbEl.style.color = trueBalColor; tbEl.innerHTML = pv(fmtGBP(t.true_balance || 0)); }
+  const scEl = document.getElementById('accounts-savings-current');
+  if (scEl) scEl.innerHTML = pv(fmtGBP((t.connected_savings_current || 0) + (t.manual_savings || 0)));
+  const ccEl = document.getElementById('accounts-credit-cards');
+  if (ccEl) ccEl.innerHTML = t.connected_credit_cards > 0 ? pv('-' + fmtGBP(t.connected_credit_cards)) : pv(fmtGBP(0));
+
+  const projectedBal = t.projected_balance != null ? t.projected_balance : (t.true_balance || 0);
+  const projColor = projectedBal >= 0 ? 'var(--teal)' : 'var(--rose)';
+  const projEl = document.getElementById('accounts-projected');
+  if (projEl) { projEl.style.color = projColor; projEl.innerHTML = pv(fmtGBP(projectedBal)); }
+
+  // ── Split accounts into debit (current/savings) vs credit ──
+  const isCredit = a => {
+    const at = (a.account_type || '').toLowerCase();
+    return at === 'credit' || at === 'credit_card' || at === 'credit card';
+  };
+  const debitAccts = accounts.filter(a => !isCredit(a));
+  const creditAccts = accounts.filter(a => isCredit(a));
+
+  // Count labels
+  const dcEl = document.getElementById('accounts-debit-count');
+  if (dcEl) dcEl.textContent = `${debitAccts.length} account${debitAccts.length !== 1 ? 's' : ''}`;
+  const ccCntEl = document.getElementById('accounts-credit-count');
+  if (ccCntEl) ccCntEl.textContent = `${creditAccts.length} card${creditAccts.length !== 1 ? 's' : ''}`;
+
+  // Section totals
+  const debitTotal = debitAccts.reduce((s,a) => s + (parseFloat(a.balance) || 0), 0) + (t.manual_savings || 0);
+  const creditTotal = creditAccts.reduce((s,a) => {
+    const stmt = parseFloat(a.statement_balance) || 0;
+    return s + (stmt > 0 ? stmt : Math.abs(parseFloat(a.balance) || 0));
+  }, 0);
+  const dstEl = document.getElementById('debit-section-total');
+  if (dstEl) dstEl.innerHTML = pv(fmtGBP(debitTotal));
+  const cstEl = document.getElementById('credit-section-total');
+  if (cstEl) cstEl.innerHTML = creditTotal > 0 ? pv('-' + fmtGBP(creditTotal)) : '';
+
+  // ── Render debit rows ──
+  const debitList = document.getElementById('accounts-debit-list');
+  if (debitList) {
+    if (!debitAccts.length && !t.manual_savings) {
+      debitList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No current or savings accounts added</div>';
+    } else {
+      let rows = debitAccts.map(a => renderAccountRow(a, accMap, false)).join('');
+      // Add manual savings as a virtual row if set
+      if (t.manual_savings > 0) {
+        rows += `<div class="acct-row">
+          ${bankLogoEl('Savings')}
+          <div class="acct-info">
+            <div class="acct-info-name">Manual Cash / Savings</div>
+            <div class="acct-info-sub"><span>Offline</span></div>
+          </div>
+          <div class="acct-bal">
+            <div class="acct-bal-amount" style="color:var(--teal)">${pv(fmtGBP(t.manual_savings))}</div>
+          </div>
+          <div class="acct-actions" style="width:28px"></div>
+        </div>`;
+      }
+      debitList.innerHTML = rows;
+    }
   }
 
-  // Split connected vs offline accounts
-  const connected = accounts.filter(a => a.tl_account_id || a.pl_account_id);
-  const offline = accounts.filter(a => !a.tl_account_id && !a.pl_account_id);
-
-  // Show offline accounts label only if there are also connected accounts
-  const offlineLabel = document.getElementById('offline-accounts-label');
-  if (offlineLabel) offlineLabel.style.display = (connected.length > 0 && offline.length > 0) ? '' : 'none';
-
-  if(!offline.length) {
-    grid.innerHTML = '';
-  } else {
-    grid.innerHTML = offline.map(a => {
-      const s = accMap[a.id] || { total_in:0, total_out:0, txn_count:0 };
-      return `<div class="account-card" id="acc-card-${a.id}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div style="display:flex;align-items:flex-start;gap:8px">
-            <input type="checkbox" class="acc-cb" data-id="${a.id}" style="accent-color:var(--gold);cursor:pointer;margin-top:3px;flex-shrink:0" onchange="toggleAccSelect('${a.id}',this.checked)">
-            <div>
-              <div class="account-name">${maskAccount(a.name)}</div>
-              <div class="account-bank">${maskBank(a.bank)} · ${a.currency} · ${a.account_type||'current'}</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:4px">
-            <button class="action-btn" onclick="deleteAccountTxns('${a.id}','${esc(maskAccount(a.name))}')" title="Delete all transactions">🗑</button>
-            <button class="action-btn" onclick="deleteAccount('${a.id}')" title="Delete account">✕</button>
-          </div>
-        </div>
-        <div class="account-stats">
-          <div>
-            <div class="account-stat-label">Total In</div>
-            <div class="account-stat-value pos">${pv(fmtGBP(s.total_in))}</div>
-          </div>
-          <div>
-            <div class="account-stat-label">Total Out</div>
-            <div class="account-stat-value neg">${pv(fmtGBP(s.total_out))}</div>
-          </div>
-          <div>
-            <div class="account-stat-label">Transactions</div>
-            <div class="account-stat-value">${s.txn_count}</div>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
+  // ── Render credit rows ──
+  const creditList = document.getElementById('accounts-credit-list');
+  if (creditList) {
+    if (!creditAccts.length) {
+      creditList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No credit cards added</div>';
+    } else {
+      creditList.innerHTML = creditAccts.map(a => renderAccountRow(a, accMap, true)).join('');
+    }
   }
+
+  // ── Upcoming payments ──
+  const payments = t.upcoming_payments || [];
+  const paySection = document.getElementById('accounts-payments-section');
+  const payTimeline = document.getElementById('accounts-payments-timeline');
+  if (paySection && payTimeline) {
+    if (payments.length) {
+      paySection.style.display = '';
+      payTimeline.innerHTML = payments.map(p => {
+        const daysUntil = p.days_until || 0;
+        let urgency = 'acct-due-ok', label = `${daysUntil}d`;
+        if (daysUntil <= 3) { urgency = 'acct-due-urgent'; label = daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil}d`; }
+        else if (daysUntil <= 7) { urgency = 'acct-due-soon'; }
+        const dueDate = p.due_date ? new Date(p.due_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : '';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+          ${bankLogoEl(p.bank)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">${esc(p.name || p.bank)}</div>
+            <div style="font-size:11px;color:var(--text3)">${dueDate}</div>
+          </div>
+          <span class="acct-due-badge ${urgency}">${label}</span>
+          <div style="font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--rose)" class="privacy-blur">-${fmtGBP(p.amount)}</div>
+        </div>`;
+      }).join('');
+    } else {
+      paySection.style.display = 'none';
+    }
+  }
+
+  // Show how-it-works only if no accounts at all
+  const howIt = document.getElementById('tl-how-it-works');
+  const allConns = (tlStatus?.connections?.length || 0) + (plaidStatus?.connections?.length || 0);
+  if (howIt) {
+    const configured = tlStatus?.configured || plaidStatus?.configured || false;
+    howIt.style.display = (configured && allConns === 0 && accounts.length === 0) ? '' : 'none';
+  }
+
+  // Show/hide sections
+  const ds = document.getElementById('accounts-debit-section');
+  const cs = document.getElementById('accounts-credit-section');
+  if (ds) ds.style.display = (debitAccts.length || t.manual_savings > 0) ? '' : 'none';
+  if (cs) cs.style.display = creditAccts.length ? '' : 'none';
+
+  // Load bank logos asynchronously
+  setTimeout(loadBankLogos, 100);
+}
+
+function renderAccountRow(a, accMap, isCredit) {
+  const s = accMap[a.id] || { total_in:0, total_out:0, txn_count:0 };
+  const bal = parseFloat(a.balance) || 0;
+  const bankName = maskBank(a.bank || '');
+  const accName = maskAccount(a.name || '');
+  const isConnected = !!(a.tl_account_id || a.pl_account_id);
+  const connBadge = isConnected
+    ? `<span style="font-size:9px;background:var(--teal-dim);color:var(--teal);padding:1px 5px;border-radius:6px">Live</span>`
+    : `<span style="font-size:9px;background:var(--surface);color:var(--text3);padding:1px 5px;border-radius:6px">Manual</span>`;
+  const cur = a.currency || 'GBP';
+  const curSymbol = cur === 'GBP' ? '£' : cur === 'INR' ? '₹' : cur === 'USD' ? '$' : cur + ' ';
+
+  if (isCredit) {
+    const stmtBal = parseFloat(a.statement_balance) || 0;
+    const displayBal = stmtBal > 0 ? stmtBal : Math.abs(bal);
+    const limit = parseFloat(a.credit_limit) || 0;
+    const used = limit > 0 ? Math.round((displayBal / limit) * 100) : 0;
+    const dueDay = a.payment_due_date || '';
+    const minPay = parseFloat(a.minimum_payment) || 0;
+
+    // Due date badge
+    let dueBadge = '';
+    if (dueDay) {
+      const now = new Date();
+      let dd = parseInt(dueDay);
+      if (!isNaN(dd)) {
+        let daysUntil = dd - now.getDate();
+        if (daysUntil < 0) daysUntil += 30;
+        let urgency = 'acct-due-ok';
+        let label = `Due ${dd}${['','st','nd','rd'][dd%10>3?0:dd%10] || 'th'}`;
+        if (daysUntil <= 3) urgency = 'acct-due-urgent';
+        else if (daysUntil <= 7) urgency = 'acct-due-soon';
+        dueBadge = `<span class="acct-due-badge ${urgency}">${label}</span>`;
+      }
+    }
+
+    // Utilisation bar
+    const utilBar = limit > 0
+      ? `<div style="margin-top:4px;width:80px;height:4px;background:var(--surface);border-radius:2px;overflow:hidden">
+           <div style="width:${Math.min(used,100)}%;height:100%;background:${used>75?'var(--rose)':used>50?'var(--gold)':'var(--teal)'};border-radius:2px"></div>
+         </div>
+         <div style="font-size:9px;color:var(--text3);margin-top:1px">${used}% of ${curSymbol}${limit.toLocaleString()}</div>`
+      : '';
+
+    return `<div class="acct-row" id="acc-card-${a.id}">
+      ${bankLogoEl(a.bank)}
+      <div class="acct-info">
+        <div class="acct-info-name">${accName}</div>
+        <div class="acct-info-sub">${bankName} ${connBadge} ${dueBadge}</div>
+      </div>
+      <div class="acct-bal">
+        <div class="acct-bal-amount" style="color:var(--rose)">${pv('-' + curSymbol + displayBal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}))}</div>
+        ${utilBar}
+      </div>
+      <div class="acct-actions">
+        <button class="action-btn" onclick="deleteAccount('${a.id}')" title="Delete">✕</button>
+      </div>
+    </div>`;
+  }
+
+  // Debit account row
+  const balColor = bal >= 0 ? 'var(--teal)' : 'var(--rose)';
+  const txnLabel = s.txn_count > 0 ? `${s.txn_count} txns` : '';
+
+  return `<div class="acct-row" id="acc-card-${a.id}">
+    ${bankLogoEl(a.bank)}
+    <div class="acct-info">
+      <div class="acct-info-name">${accName}</div>
+      <div class="acct-info-sub">${bankName} · ${a.account_type || 'current'} ${connBadge} <span style="color:var(--text3)">${txnLabel}</span></div>
+    </div>
+    <div class="acct-bal">
+      <div class="acct-bal-amount" style="color:${balColor}">${pv(curSymbol + bal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}))}</div>
+      <div class="acct-bal-sub">${cur}</div>
+    </div>
+    <div class="acct-actions">
+      <button class="action-btn" onclick="deleteAccount('${a.id}')" title="Delete">✕</button>
+    </div>
+  </div>`;
 }
 
 // ── Investments ───────────────────────────────────────────────────────────────
@@ -7211,7 +7585,9 @@ function openModal(id, data) {
     document.getElementById('txn-desc').value = '';
     document.getElementById('txn-notes').value = '';
     document.getElementById('txn-currency').value = 'GBP';
-    document.getElementById('txn-account').value = '';
+    // Default to first account if available
+    const firstAccId = (D && D.accounts && D.accounts.length > 0) ? D.accounts[0].id : '';
+    document.getElementById('txn-account').value = firstAccId;
     setType('debit');
     checkFutureHint();
     document.getElementById('txn-date').addEventListener('change', checkFutureHint);
@@ -7318,6 +7694,8 @@ async function saveTxn() {
         body: JSON.stringify(body)
       });
       toast('Transaction updated ✓');
+      // Check for bulk recategorize opportunity
+      checkBulkRecategorize(body.description, body.category, editId);
     }
   } else {
     await post('/api/transactions', body);
@@ -7347,6 +7725,326 @@ function showRecurringChoice() {
     overlay.querySelector('#rec-choice-cancel').onclick = () => { document.body.removeChild(overlay); resolve('cancel'); };
     overlay.onclick = (e) => { if (e.target === overlay) { document.body.removeChild(overlay); resolve('cancel'); } };
   });
+}
+
+// ── Category Auto-Suggest (debounced) ────────────────────────────────────────
+let _catSuggestTimer = null;
+function debounceCategorySuggest() {
+  clearTimeout(_catSuggestTimer);
+  _catSuggestTimer = setTimeout(fetchCategorySuggestion, 350);
+}
+async function fetchCategorySuggestion() {
+  const desc = document.getElementById('txn-desc').value.trim();
+  const sugEl = document.getElementById('txn-cat-suggest');
+  if (desc.length < 3) { sugEl.style.display = 'none'; return; }
+  try {
+    const r = await fetch('/api/category-suggest?description=' + encodeURIComponent(desc));
+    const d = await r.json();
+    if (d.category && d.category !== 'Other' && d.source === 'learned') {
+      document.getElementById('txn-cat-suggest-name').textContent = d.category;
+      sugEl.style.display = '';
+    } else {
+      sugEl.style.display = 'none';
+    }
+  } catch(e) { sugEl.style.display = 'none'; }
+}
+function applyCategorySuggestion() {
+  const name = document.getElementById('txn-cat-suggest-name').textContent;
+  if (name) {
+    document.getElementById('txn-category').value = name;
+    document.getElementById('txn-cat-suggest').style.display = 'none';
+    toast('Category set to ' + name + ' ✓');
+  }
+}
+
+// ── Bulk Re-categorize Toast ─────────────────────────────────────────────────
+async function checkBulkRecategorize(description, category, excludeId) {
+  if (!description || !category || category === 'Other') return;
+  try {
+    const r = await fetch('/api/transactions/find-similar', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({description, exclude_id: excludeId})
+    });
+    const d = await r.json();
+    const diffCat = (d.matches || []).filter(m => m.category !== category);
+    if (diffCat.length > 0) {
+      showRecatToast(description, category, diffCat.length, excludeId);
+    }
+  } catch(e) {}
+}
+function showRecatToast(description, category, count, excludeId) {
+  // Remove any existing recat toast
+  document.querySelectorAll('.recat-toast').forEach(el => el.remove());
+  const toast = document.createElement('div');
+  toast.className = 'recat-toast';
+  toast.innerHTML = `
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:600;color:var(--text)">🔄 Apply to similar?</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px">${count} similar transaction${count>1?'s':''} can be updated to <strong>${category}</strong></div>
+    </div>
+    <button class="btn btn-gold btn-sm" onclick="applyBulkRecat('${description.replace(/'/g,"\\'")}','${category}','${excludeId}',this)">Apply All</button>
+    <button class="btn btn-ghost btn-sm" onclick="this.closest('.recat-toast').remove()">✕</button>
+  `;
+  document.body.appendChild(toast);
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 10000);
+}
+async function applyBulkRecat(description, category, excludeId, btn) {
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/transactions/bulk-recategorize', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({description, category, exclude_id: excludeId})
+    });
+    const d = await r.json();
+    toast(`✅ Updated ${d.updated} transactions to ${category}`);
+    btn.closest('.recat-toast').remove();
+    load();
+  } catch(e) { toast('Error updating', 'error'); btn.textContent = 'Apply All'; btn.disabled = false; }
+}
+
+// ── Budget Pots ──────────────────────────────────────────────────────────────
+async function loadBudgetPots() {
+  try {
+    const r = await fetch('/api/budget-summary');
+    const d = await r.json();
+    const card = document.getElementById('budget-pots-card');
+    const body = document.getElementById('budget-pots-body');
+    if (!d.pots || d.pots.length === 0) {
+      if (d.unbudgeted && d.unbudgeted.length > 0) {
+        card.style.display = '';
+        body.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text3);font-size:13px">
+          <p>No budgets set yet. You have spending in ${d.unbudgeted.length} categories this month.</p>
+          <button class="btn btn-gold btn-sm" onclick="openBudgetSetup()" style="margin-top:10px">+ Set Up Budgets</button>
+        </div>`;
+      }
+      return;
+    }
+    card.style.display = '';
+
+    // Overall summary bar
+    const overallColor = d.overall_pct > 100 ? 'var(--rose)' : d.overall_pct > 80 ? '#fbbf24' : 'var(--teal)';
+    let html = `<div style="margin-bottom:14px;padding:10px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;color:var(--text2)">Total: ${pv('£' + d.total_spent.toLocaleString('en',{maximumFractionDigits:0}))} / £${d.total_budgeted.toLocaleString('en',{maximumFractionDigits:0})}</span>
+        <span style="font-size:12px;font-weight:600;color:${overallColor}">${d.overall_pct}%</span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden">
+        <div style="height:100%;width:${Math.min(100, d.overall_pct)}%;background:${overallColor};border-radius:3px;transition:width 0.4s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">${d.days_left} days left in month</div>
+    </div>`;
+
+    // Alert banner
+    if (d.over_budget.length > 0) {
+      html += `<div style="padding:10px 14px;margin-bottom:14px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:10px;font-size:12px;color:#ef4444">
+        ⚠️ Over budget: <strong>${d.over_budget.join(', ')}</strong>
+      </div>`;
+    }
+
+    // Pot cards grid
+    html += '<div class="budget-pots-grid">';
+    for (const pot of d.pots) {
+      const color = pot.status === 'over' ? 'var(--rose)' : pot.status === 'warning' ? '#fbbf24' : 'var(--teal)';
+      const statusLabel = pot.status === 'over' ? 'Over' : pot.status === 'warning' ? 'Caution' : 'On Track';
+      const statusBg = pot.status === 'over' ? 'rgba(239,68,68,0.12)' : pot.status === 'warning' ? 'rgba(251,191,36,0.12)' : 'rgba(34,197,94,0.12)';
+      html += `<div class="budget-pot">
+        <div class="budget-pot-header">
+          <span class="budget-pot-icon">${pot.icon}</span>
+          <span class="budget-pot-name">${pot.category}</span>
+          <span class="budget-pot-status" style="background:${statusBg};color:${color}">${statusLabel}</span>
+          <span class="budget-pot-edit" onclick="editBudgetPot('${pot.category.replace(/'/g,"\\'")}',${pot.budget})">✏</span>
+        </div>
+        <div class="budget-pot-bar">
+          <div class="budget-pot-fill" style="width:${Math.min(100, pot.pct)}%;background:${color}"></div>
+        </div>
+        <div class="budget-pot-stats">
+          <span>${pv('£' + pot.spent.toLocaleString('en',{maximumFractionDigits:0}))} / £${pot.budget.toLocaleString('en',{maximumFractionDigits:0})}</span>
+          <span>${pot.remaining > 0 ? '£' + pot.remaining.toLocaleString('en',{maximumFractionDigits:0}) + ' left' : '£' + Math.abs(pot.remaining).toLocaleString('en',{maximumFractionDigits:0}) + ' over'}</span>
+        </div>
+        ${pot.daily_allowance > 0 ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">£${pot.daily_allowance.toFixed(0)}/day for ${pot.days_left} days</div>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+
+    // Unbudgeted spending
+    if (d.unbudgeted && d.unbudgeted.length > 0) {
+      html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Unbudgeted Spending</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">`;
+      for (const u of d.unbudgeted.slice(0, 6)) {
+        html += `<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface2);border-radius:8px;font-size:12px;cursor:pointer;border:1px solid var(--border)" onclick="editBudgetPot('${u.category.replace(/'/g,"\\'")}',0)">
+          <span>${u.icon}</span>
+          <span>${u.category}</span>
+          <span style="color:var(--text3)">${pv('£' + u.spent.toLocaleString('en',{maximumFractionDigits:0}))}</span>
+          <span style="color:var(--gold);font-size:10px">+ budget</span>
+        </div>`;
+      }
+      html += '</div></div>';
+    }
+
+    body.innerHTML = html;
+  } catch(e) { console.error('Budget pots error:', e); }
+}
+
+async function editBudgetPot(category, currentBudget) {
+  const val = prompt(`Monthly budget for ${category} (£):`, currentBudget || '');
+  if (val === null) return;
+  const budget = parseFloat(val) || 0;
+  await fetch('/api/budget-pots', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({category, budget})
+  });
+  toast(budget > 0 ? `Budget set: ${category} = £${budget}/mo ✓` : `Budget removed for ${category}`);
+  loadBudgetPots();
+}
+
+function openBudgetSetup() {
+  // Show all categories that have spending and let user pick one to set budget
+  const cats = D.categories_list || [];
+  const cat = prompt('Enter category name to set budget for:\n\n' + cats.join(', '));
+  if (!cat) return;
+  editBudgetPot(cat, 0);
+}
+
+// ── Financial Health ─────────────────────────────────────────────────────────
+async function loadFinancialHealth() {
+  try {
+    const [healthR, behaviorR] = await Promise.all([
+      fetch('/api/financial-health'),
+      fetch('/api/spending-behavior')
+    ]);
+    const health = await healthR.json();
+    const behavior = await behaviorR.json();
+    renderFinancialHealth(health, behavior);
+  } catch(e) { console.error('Financial health error:', e); }
+}
+
+function renderFinancialHealth(health, behavior) {
+  const card = document.getElementById('financial-health-card');
+  const body = document.getElementById('financial-health-body');
+  card.style.display = '';
+
+  const scoreColor = health.score >= 75 ? 'var(--teal)' : health.score >= 50 ? '#fbbf24' : 'var(--rose)';
+  const gradeColors = {A:'var(--teal)',B:'#34d399',C:'#fbbf24',D:'#f97316',F:'var(--rose)'};
+  const gradeColor = gradeColors[health.grade] || 'var(--text)';
+
+  // SVG gauge
+  const radius = 54, stroke = 8, circ = 2 * Math.PI * radius;
+  const offset = circ - (health.score / 100) * circ;
+
+  let html = `<div class="fh-gauge-wrap">
+    <div style="position:relative;width:130px;height:130px;flex-shrink:0">
+      <svg viewBox="0 0 130 130" width="130" height="130">
+        <circle cx="65" cy="65" r="${radius}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="${stroke}"/>
+        <circle cx="65" cy="65" r="${radius}" fill="none" stroke="${scoreColor}" stroke-width="${stroke}"
+          stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+          transform="rotate(-90 65 65)" style="transition:stroke-dashoffset 0.8s ease"/>
+      </svg>
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:32px;font-weight:700;font-family:var(--font-display);color:${scoreColor}">${health.score}</div>
+        <div style="font-size:12px;font-weight:600;color:${gradeColor};background:${gradeColor}20;padding:1px 8px;border-radius:6px">Grade ${health.grade}</div>
+      </div>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Your Financial Health Score</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Based on savings, emergency fund, debt, spending trends & budget adherence</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:var(--teal);font-family:var(--font-display)">${health.cash_runway_months}</div>
+          <div style="font-size:10px;color:var(--text3)">Months Runway</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:var(--text);font-family:var(--font-display)">${health.savings_rate}%</div>
+          <div style="font-size:10px;color:var(--text3)">Savings Rate</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:700;color:var(--text);font-family:var(--font-display)">${pv('£' + (health.avg_monthly_spend||0).toLocaleString('en',{maximumFractionDigits:0}))}</div>
+          <div style="font-size:10px;color:var(--text3)">Avg Monthly Spend</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // Component bars
+  html += '<div class="fh-components">';
+  for (const c of health.components) {
+    const barColor = c.score >= 70 ? 'var(--teal)' : c.score >= 40 ? '#fbbf24' : 'var(--rose)';
+    html += `<div class="fh-comp">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:500">${c.name}</span>
+        <span style="color:${barColor};font-weight:600">${c.score}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text3)">${c.detail} (${c.weight}% weight)</div>
+      <div class="fh-comp-bar"><div class="fh-comp-fill" style="width:${c.score}%;background:${barColor}"></div></div>
+    </div>`;
+  }
+  html += '</div>';
+
+  // Insights
+  if (health.insights && health.insights.length > 0) {
+    html += '<div class="fh-insights">';
+    for (const ins of health.insights) {
+      html += `<div class="fh-insight">${ins}</div>`;
+    }
+    html += '</div>';
+  }
+
+  // Spending Behavior section
+  if (behavior) {
+    html += `<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px">📊 Spending Behavior</div>`;
+
+    // Badges
+    if (behavior.badges && behavior.badges.length > 0) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">';
+      for (const b of behavior.badges) {
+        html += `<span class="behavior-badge" title="${b.detail}">${b.icon} ${b.label}</span>`;
+      }
+      html += '</div>';
+    }
+
+    // Day-of-week mini chart
+    if (behavior.day_of_week && behavior.day_of_week.length > 0) {
+      const maxDow = Math.max(...behavior.day_of_week.map(d => d.avg_spend));
+      html += '<div style="display:flex;gap:4px;align-items:end;height:60px;margin-bottom:12px">';
+      for (const d of behavior.day_of_week) {
+        const h = maxDow > 0 ? Math.max(4, (d.avg_spend / maxDow) * 50) : 4;
+        const color = ['Sat','Sun'].includes(d.day) ? '#fbbf24' : 'var(--teal)';
+        html += `<div style="flex:1;text-align:center" title="£${d.avg_spend.toFixed(0)} avg on ${d.day}s">
+          <div style="height:${h}px;background:${color};border-radius:3px 3px 0 0;margin:0 auto;width:70%;transition:height 0.3s"></div>
+          <div style="font-size:9px;color:var(--text3);margin-top:3px">${d.day}</div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+
+    // Category velocity
+    if (behavior.category_velocity && behavior.category_velocity.length > 0) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
+      for (const v of behavior.category_velocity.slice(0, 5)) {
+        const arrow = v.direction === 'up' ? '↑' : '↓';
+        const color = v.direction === 'up' ? 'var(--rose)' : 'var(--teal)';
+        html += `<span style="font-size:11px;padding:3px 8px;border-radius:6px;background:${color}15;color:${color};border:1px solid ${color}30">
+          ${v.category} ${arrow}${Math.abs(v.change_pct)}%
+        </span>`;
+      }
+      html += '</div>';
+    }
+
+    // Behavioral insights
+    if (behavior.insights && behavior.insights.length > 0) {
+      html += '<div style="display:flex;flex-direction:column;gap:4px">';
+      for (const ins of behavior.insights) {
+        html += `<div style="font-size:11px;color:var(--text2)">• ${ins}</div>`;
+      }
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
 }
 
 async function deleteTxn(id) {
@@ -7410,11 +8108,25 @@ async function saveAccount() {
     bank: document.getElementById('acc-bank').value,
     currency: document.getElementById('acc-currency').value,
     account_type: document.getElementById('acc-type').value,
+    balance: parseFloat(document.getElementById('acc-balance').value) || 0,
   };
   if(!body.name) { toast('Account name required', 'error'); return; }
+  // Credit card fields
+  if (body.account_type === 'credit') {
+    body.credit_limit = parseFloat(document.getElementById('acc-credit-limit')?.value) || 0;
+    body.statement_balance = parseFloat(document.getElementById('acc-stmt-balance')?.value) || 0;
+    body.payment_due_date = document.getElementById('acc-due-date')?.value || '';
+    body.minimum_payment = parseFloat(document.getElementById('acc-min-payment')?.value) || 0;
+  }
   await post('/api/accounts', body);
   toast('Account added ✓');
   closeModal('account-modal');
+  // Reset credit fields
+  ['acc-name','acc-bank','acc-balance','acc-credit-limit','acc-stmt-balance','acc-due-date','acc-min-payment'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('acc-credit-fields').style.display = 'none';
   load();
 }
 async function deleteAccount(id) {
@@ -7963,7 +8675,9 @@ function renderBanks() {
   const env = tlStatus.env || 'sandbox';
 
   // Config warning
-  document.getElementById('tl-not-configured').style.display = configured ? 'none' : '';
+  // Hide TrueLayer config warning if configured OR if user has manual accounts (not blocking)
+  const hasAccounts = (D.accounts || []).length > 0;
+  document.getElementById('tl-not-configured').style.display = (configured || hasAccounts) ? 'none' : '';
 
   // Env badge
   const badge = document.getElementById('tl-env-badge');
@@ -7985,76 +8699,9 @@ function renderBanks() {
   document.getElementById('plaid-connect-btn').style.display = plaidConfigured ? '' : 'none';
   document.getElementById('tl-sync-btn').style.display = (allConnections.length > 0) ? '' : 'none';
 
-  // How-it-works placeholder
-  document.getElementById('tl-how-it-works').style.display = ((configured || plaidConfigured) && allConnections.length === 0) ? '' : 'none';
-
-  // Connections grid
-  const grid = document.getElementById('tl-connections-grid');
-  const bankEmojis = {
-    monzo: '🟣', revolut: '🔵', barclays: '🔵', hsbc: '🔴',
-    natwest: '🟢', lloyds: '🟠', santander: '🔴', starling: '🟢',
-    'halifax': '🔵', 'nationwide': '🔵', 'first direct': '🟠',
-  };
-  function bankEmoji(name) {
-    const k = (name||'').toLowerCase();
-    for (const [key, em] of Object.entries(bankEmojis)) {
-      if (k.includes(key)) return em;
-    }
-    return '🏦';
-  }
-
-  function renderBankCard(c, source) {
-    const lastSync = c.last_synced
-      ? new Date(c.last_synced).toLocaleString('en-GB', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})
-      : 'Never synced';
-    const accounts = c.accounts || [];
-    const em = bankEmoji(c.bank_name);
-    const isPlaid = source === 'plaid';
-    const borderColor = isPlaid ? 'rgba(0,220,127,0.2)' : 'rgba(59,130,246,0.2)';
-    const badgeColor = isPlaid ? '#00dc7f' : 'var(--teal)';
-    const disconnectFn = isPlaid ? `plaidDisconnect('${c.id}')` : `tlDisconnect('${c.id}')`;
-    const syncFn = isPlaid ? `plaidSyncOne('${c.id}')` : `tlSyncOne('${c.id}')`;
-    const badge = isPlaid
-      ? `<span style="font-size:9px;background:rgba(0,220,127,0.12);color:#00dc7f;padding:2px 6px;border-radius:8px;margin-left:6px">via Plaid</span>`
-      : `<span style="font-size:9px;background:var(--teal-dim);color:var(--teal);padding:2px 6px;border-radius:8px;margin-left:6px">via TrueLayer</span>`;
-    return `
-    <div class="card" style="border-color:${borderColor}">
-      <div class="card-shine"></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="width:46px;height:46px;border-radius:12px;background:${isPlaid ? 'rgba(0,220,127,0.08)' : 'var(--teal-dim)'};border:1px solid ${borderColor};display:flex;align-items:center;justify-content:center;font-size:24px">${em}</div>
-          <div>
-            <div style="font-weight:600;font-size:15px">${c.bank_name}${badge}</div>
-            <div style="font-size:11px;color:${badgeColor};margin-top:2px">✓ Connected</div>
-          </div>
-        </div>
-        <button class="action-btn" onclick="${disconnectFn}" title="Disconnect bank">✕</button>
-      </div>
-
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-        ${accounts.map(a => `
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px">
-            <div style="font-size:11px;color:var(--text3)">${a.account_type}</div>
-            <div style="font-size:13px;font-weight:500">${a.display_name}</div>
-            <div style="font-size:11px;color:var(--text3)">${a.currency}</div>
-          </div>`).join('')}
-      </div>
-
-      <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="font-size:11px;color:var(--text3)">Last sync: ${lastSync}</div>
-        <button class="btn btn-teal btn-sm" onclick="${syncFn}">
-          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          Sync
-        </button>
-      </div>
-    </div>`;
-  }
-
-  grid.innerHTML = connections.map(c => renderBankCard(c, 'truelayer')).join('');
-
-  // Plaid connections grid
-  const plaidGrid = document.getElementById('plaid-connections-grid');
-  plaidGrid.innerHTML = plaidConns.map(c => renderBankCard(c, 'plaid')).join('');
+  // How-it-works — only show if configured but no connections AND no manual accounts
+  const accounts = D.accounts || [];
+  document.getElementById('tl-how-it-works').style.display = ((configured || plaidConfigured) && allConnections.length === 0 && accounts.length === 0) ? '' : 'none';
 }
 
 async function tlConnect() {
