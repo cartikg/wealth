@@ -1958,6 +1958,21 @@ EMMA_CAT_MAP = {
     'atm': 'Other',
 }
 
+def _detect_account_type(bank_name, acct_name):
+    """Auto-detect if an account is a credit card based on bank/account name."""
+    bl = (bank_name or '').lower()
+    nl = (acct_name or '').lower()
+    cc_banks = {'american express', 'amex'}
+    cc_keywords = ['credit card', 'amex', 'clarity', 'barclaycard', 'gold card', 'platinum card', 'charge card']
+    if any(b in bl for b in cc_banks):
+        return 'credit'
+    if any(kw in nl for kw in cc_keywords):
+        return 'credit'
+    if any(kw in bl for kw in cc_keywords):
+        return 'credit'
+    return 'current'
+
+
 @app.route('/api/import/emma-sheet', methods=['POST'])
 def import_emma_sheet():
     """Import transactions from a published Emma Google Sheet."""
@@ -2107,7 +2122,7 @@ def import_emma_sheet():
                     'name': acct_name or bank_name,
                     'bank': bank_name or 'Emma',
                     'currency': currency if currency in ['GBP', 'USD', 'EUR', 'INR'] else 'GBP',
-                    'account_type': 'current',
+                    'account_type': _detect_account_type(bank_name, acct_name),
                     'source': 'emma',
                 }
                 data.setdefault('accounts', []).append(new_acct)

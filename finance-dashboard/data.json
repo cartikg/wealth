@@ -83518,32 +83518,11 @@
   ],
   "accounts": [
     {
-      "id": "uk-main",
-      "name": "UK Current",
-      "currency": "GBP",
-      "bank": "Monzo",
-      "account_type": "current"
-    },
-    {
-      "id": "uk-savings",
-      "name": "UK Savings",
-      "currency": "GBP",
-      "bank": "Savings",
-      "account_type": "savings"
-    },
-    {
-      "id": "india-main",
-      "name": "India Account",
-      "currency": "INR",
-      "bank": "HDFC",
-      "account_type": "current"
-    },
-    {
       "id": "emma_american_express_amex_gk_ba",
       "name": "Amex GK BA",
       "bank": "American Express",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {
@@ -83575,7 +83554,7 @@
       "name": "Amex GK Gold",
       "bank": "American Express",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {
@@ -83599,7 +83578,7 @@
       "name": "Tej Amex Gold",
       "bank": "American Express",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {
@@ -83607,7 +83586,7 @@
       "name": "Clarity",
       "bank": "Halifax",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {
@@ -83615,7 +83594,7 @@
       "name": "Tej Amex BA",
       "bank": "American Express",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {
@@ -83623,7 +83602,7 @@
       "name": "Credit Card",
       "bank": "Barclays Bank",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {
@@ -83631,7 +83610,7 @@
       "name": "American Express\u00c2\u00ae Preferred Rewards",
       "bank": "American Express",
       "currency": "GBP",
-      "account_type": "current",
+      "account_type": "credit",
       "source": "emma"
     },
     {

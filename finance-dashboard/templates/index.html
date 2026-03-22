@@ -1309,24 +1309,40 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div id="tl-accounts-grid"></div>
       </div>
 
-      <!-- ═══ Debit Accounts (Current / Savings) ═══ -->
-      <div id="accounts-debit-section" style="margin-bottom:24px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <!-- ═══ Connected Bank Accounts ═══ -->
+      <div id="accounts-connected-section" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer" onclick="toggleAcctGroup('connected')">
+          <span class="card-chevron open" id="acct-chev-connected" style="font-size:10px;transition:transform 0.2s">▾</span>
           <div style="width:8px;height:8px;border-radius:50%;background:var(--teal)"></div>
-          <div style="font-family:var(--font-display);font-size:15px;font-weight:600">Current & Savings</div>
-          <div style="font-size:12px;color:var(--text3);margin-left:4px" id="debit-section-total" class="privacy-blur"></div>
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:600">Bank Accounts</div>
+          <div style="font-size:12px;color:var(--text3);margin-left:4px" id="connected-section-total" class="privacy-blur"></div>
+          <span style="font-size:10px;color:var(--text3);margin-left:auto" id="connected-section-count"></span>
         </div>
-        <div id="accounts-debit-list" class="acct-list"></div>
+        <div id="accounts-connected-list" class="acct-list"></div>
       </div>
 
       <!-- ═══ Credit Cards ═══ -->
       <div id="accounts-credit-section" style="margin-bottom:24px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer" onclick="toggleAcctGroup('credit')">
+          <span class="card-chevron open" id="acct-chev-credit" style="font-size:10px;transition:transform 0.2s">▾</span>
           <div style="width:8px;height:8px;border-radius:50%;background:var(--rose)"></div>
           <div style="font-family:var(--font-display);font-size:15px;font-weight:600">Credit Cards</div>
           <div style="font-size:12px;color:var(--text3);margin-left:4px" id="credit-section-total" class="privacy-blur"></div>
+          <span style="font-size:10px;color:var(--text3);margin-left:auto" id="credit-section-count"></span>
         </div>
         <div id="accounts-credit-list" class="acct-list"></div>
+      </div>
+
+      <!-- ═══ Manual / Imported Accounts ═══ -->
+      <div id="accounts-manual-section" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer" onclick="toggleAcctGroup('manual')">
+          <span class="card-chevron" id="acct-chev-manual" style="font-size:10px;transition:transform 0.2s">▸</span>
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--text3)"></div>
+          <div style="font-family:var(--font-display);font-size:15px;font-weight:600">Manual & Imported</div>
+          <div style="font-size:12px;color:var(--text3);margin-left:4px" id="manual-section-total" class="privacy-blur"></div>
+          <span style="font-size:10px;color:var(--text3);margin-left:auto" id="manual-section-count"></span>
+        </div>
+        <div id="accounts-manual-list" class="acct-list" style="display:none"></div>
       </div>
 
       <!-- ═══ Upcoming Payments Timeline ═══ -->
@@ -4562,39 +4578,75 @@ function renderAccounts() {
   const projEl = document.getElementById('accounts-projected');
   if (projEl) { projEl.style.color = projColor; projEl.innerHTML = pv(fmtGBP(projectedBal)); }
 
-  // ── Split accounts into debit (current/savings) vs credit ──
+  // ── Classify accounts into 3 groups ──
   const isCredit = a => {
     const at = (a.account_type || '').toLowerCase();
     return at === 'credit' || at === 'credit_card' || at === 'credit card';
   };
-  const debitAccts = accounts.filter(a => !isCredit(a));
-  const creditAccts = accounts.filter(a => isCredit(a));
+  const isConnected = a => !!(a.tl_account_id || a.pl_account_id);
+  const isManualImported = a => !isConnected(a) && !isCredit(a);
 
-  // Count labels
+  // Connected bank accounts (TrueLayer / Plaid, non-credit)
+  const connectedAccts = accounts.filter(a => isConnected(a) && !isCredit(a));
+  // Credit cards (from any source)
+  const creditAccts = accounts.filter(a => isCredit(a));
+  // Manual + Emma imported debit accounts (not connected, not credit)
+  const manualAccts = accounts.filter(a => isManualImported(a));
+
+  // ── Count labels ──
   const dcEl = document.getElementById('accounts-debit-count');
-  if (dcEl) dcEl.textContent = `${debitAccts.length} account${debitAccts.length !== 1 ? 's' : ''}`;
+  if (dcEl) dcEl.textContent = `${connectedAccts.length + manualAccts.length} account${(connectedAccts.length + manualAccts.length) !== 1 ? 's' : ''}`;
   const ccCntEl = document.getElementById('accounts-credit-count');
   if (ccCntEl) ccCntEl.textContent = `${creditAccts.length} card${creditAccts.length !== 1 ? 's' : ''}`;
 
-  // Section totals
-  const debitTotal = debitAccts.reduce((s,a) => s + (parseFloat(a.balance) || 0), 0) + (t.manual_savings || 0);
+  // ── Section totals ──
+  const connectedTotal = connectedAccts.reduce((s,a) => s + (parseFloat(a.balance) || 0), 0);
+  const manualTotal = manualAccts.reduce((s,a) => s + (parseFloat(a.balance) || 0), 0) + (t.manual_savings || 0);
   const creditTotal = creditAccts.reduce((s,a) => {
     const stmt = parseFloat(a.statement_balance) || 0;
     return s + (stmt > 0 ? stmt : Math.abs(parseFloat(a.balance) || 0));
   }, 0);
-  const dstEl = document.getElementById('debit-section-total');
-  if (dstEl) dstEl.innerHTML = pv(fmtGBP(debitTotal));
+
+  const connTotalEl = document.getElementById('connected-section-total');
+  if (connTotalEl) connTotalEl.innerHTML = pv(fmtGBP(connectedTotal));
+  const connCntEl = document.getElementById('connected-section-count');
+  if (connCntEl) connCntEl.textContent = `${connectedAccts.length} account${connectedAccts.length !== 1 ? 's' : ''}`;
   const cstEl = document.getElementById('credit-section-total');
   if (cstEl) cstEl.innerHTML = creditTotal > 0 ? pv('-' + fmtGBP(creditTotal)) : '';
+  const ccSCntEl = document.getElementById('credit-section-count');
+  if (ccSCntEl) ccSCntEl.textContent = `${creditAccts.length} card${creditAccts.length !== 1 ? 's' : ''}`;
+  const manTotalEl = document.getElementById('manual-section-total');
+  if (manTotalEl) manTotalEl.innerHTML = pv(fmtGBP(manualTotal));
+  const manCntEl = document.getElementById('manual-section-count');
+  if (manCntEl) manCntEl.textContent = `${manualAccts.length} account${manualAccts.length !== 1 ? 's' : ''}`;
 
-  // ── Render debit rows ──
-  const debitList = document.getElementById('accounts-debit-list');
-  if (debitList) {
-    if (!debitAccts.length && !t.manual_savings) {
-      debitList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No current or savings accounts added</div>';
+  // ── Render connected bank rows ──
+  const connList = document.getElementById('accounts-connected-list');
+  if (connList) {
+    if (!connectedAccts.length) {
+      connList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No connected bank accounts. Use <b>Connect Bank</b> to link via TrueLayer or Plaid.</div>';
     } else {
-      let rows = debitAccts.map(a => renderAccountRow(a, accMap, false)).join('');
-      // Add manual savings as a virtual row if set
+      connList.innerHTML = connectedAccts.map(a => renderAccountRow(a, accMap, false)).join('');
+    }
+  }
+
+  // ── Render credit rows ──
+  const creditList = document.getElementById('accounts-credit-list');
+  if (creditList) {
+    if (!creditAccts.length) {
+      creditList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No credit cards added. Click <b>+ Add Account</b> and select Credit Card type.</div>';
+    } else {
+      creditList.innerHTML = creditAccts.map(a => renderAccountRow(a, accMap, true)).join('');
+    }
+  }
+
+  // ── Render manual/imported rows ──
+  const manualList = document.getElementById('accounts-manual-list');
+  if (manualList) {
+    if (!manualAccts.length && !t.manual_savings) {
+      manualList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No manual accounts</div>';
+    } else {
+      let rows = manualAccts.map(a => renderAccountRow(a, accMap, false)).join('');
       if (t.manual_savings > 0) {
         rows += `<div class="acct-row">
           ${bankLogoEl('Savings')}
@@ -4608,17 +4660,7 @@ function renderAccounts() {
           <div class="acct-actions" style="width:28px"></div>
         </div>`;
       }
-      debitList.innerHTML = rows;
-    }
-  }
-
-  // ── Render credit rows ──
-  const creditList = document.getElementById('accounts-credit-list');
-  if (creditList) {
-    if (!creditAccts.length) {
-      creditList.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No credit cards added</div>';
-    } else {
-      creditList.innerHTML = creditAccts.map(a => renderAccountRow(a, accMap, true)).join('');
+      manualList.innerHTML = rows;
     }
   }
 
@@ -4658,14 +4700,27 @@ function renderAccounts() {
     howIt.style.display = (configured && allConns === 0 && accounts.length === 0) ? '' : 'none';
   }
 
-  // Show/hide sections
-  const ds = document.getElementById('accounts-debit-section');
-  const cs = document.getElementById('accounts-credit-section');
-  if (ds) ds.style.display = (debitAccts.length || t.manual_savings > 0) ? '' : 'none';
-  if (cs) cs.style.display = creditAccts.length ? '' : 'none';
+  // Show/hide sections based on content
+  const connSec = document.getElementById('accounts-connected-section');
+  const credSec = document.getElementById('accounts-credit-section');
+  const manSec = document.getElementById('accounts-manual-section');
+  if (connSec) connSec.style.display = connectedAccts.length ? '' : 'none';
+  if (credSec) credSec.style.display = creditAccts.length ? '' : 'none';
+  if (manSec) manSec.style.display = (manualAccts.length || t.manual_savings > 0) ? '' : 'none';
 
   // Load bank logos asynchronously
   setTimeout(loadBankLogos, 100);
+}
+
+// Toggle account group collapse/expand
+function toggleAcctGroup(group) {
+  const list = document.getElementById(`accounts-${group}-list`);
+  const chev = document.getElementById(`acct-chev-${group}`);
+  if (!list) return;
+  const isHidden = list.style.display === 'none';
+  list.style.display = isHidden ? '' : 'none';
+  if (chev) chev.textContent = isHidden ? '▾' : '▸';
+  if (chev) chev.classList.toggle('open', isHidden);
 }
 
 function renderAccountRow(a, accMap, isCredit) {
