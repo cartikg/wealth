@@ -9772,15 +9772,9 @@ async function tlSync(sinceDate) {
           </div>
         </div>`;
 
-      // Show live balances
-      if (d.accounts?.length > 0) {
-        tlSyncedBalances = d.accounts;
-        renderSyncedBalances();
-      }
-
       toast(`✓ Synced: ${d.imported} new transactions`, 'success');
       setTimeout(() => { resultEl.style.display = 'none'; }, 6000);
-      load(); // refresh all charts + data
+      await load(); // refresh all charts + data (accounts shown in grouped view)
     } else {
       resultEl.style.display = '';
       resultEl.innerHTML = `<div style="background:var(--rose-dim);border:1px solid rgba(239,68,68,0.25);border-radius:10px;padding:14px 18px;color:var(--rose)">${d.error || 'Sync failed'}</div>`;
@@ -9899,7 +9893,7 @@ async function plaidSync(sinceDate) {
         </div>`;
       toast(`✓ Plaid synced: ${d.imported} new transactions`, 'success');
       setTimeout(() => { resultEl.style.display = 'none'; }, 6000);
-      load();
+      await load();
     } else {
       toast('Plaid sync failed: ' + (d.error || 'Unknown'), 'error');
     }
