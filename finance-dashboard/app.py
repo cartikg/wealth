@@ -1180,6 +1180,23 @@ def add_transaction():
         'is_scheduled': txn_date > today,
         'source': 'manual'
     }
+    # Link receipt if provided
+    if body.get('receipt_id'):
+        txn['receipt_id'] = body['receipt_id']
+        receipts = load_receipts()
+        for r in receipts:
+            if r['id'] == body['receipt_id']:
+                r['added_to_transactions'] = True
+                r['transaction_id'] = txn['id']
+        save_receipts(receipts)
+    # Add splits if provided
+    if body.get('splits'):
+        splits = body['splits']
+        split_total = sum(s.get('amount', 0) for s in splits)
+        if abs(split_total - txn['amount']) <= 0.02:
+            txn['splits'] = splits
+            sorted_splits = sorted(splits, key=lambda s: s.get('amount', 0), reverse=True)
+            txn['category'] = sorted_splits[0].get('category', cat)
     # Learn from manual categorization (if user explicitly chose a category)
     if body.get('category') and body['category'] != 'Other':
         learn_category_rule(data, desc, body['category'])
@@ -1196,6 +1213,20 @@ def update_transaction(txn_id):
         if t.get('id') == txn_id:
             updated = {**t, **body}
             updated['is_scheduled'] = updated.get('date', today) > today
+            # Validate splits if provided
+            if 'splits' in body and body['splits']:
+                splits = body['splits']
+                split_total = sum(s.get('amount', 0) for s in splits)
+                txn_amount = updated.get('amount', 0)
+                if abs(split_total - txn_amount) > 0.02:
+                    return jsonify({'error': f'Split total ({split_total}) does not match transaction amount ({txn_amount})'}), 400
+                # Set primary category to largest split
+                splits_sorted = sorted(splits, key=lambda s: s.get('amount', 0), reverse=True)
+                updated['category'] = splits_sorted[0].get('category', updated.get('category', 'Other'))
+                updated['splits'] = splits
+            elif 'splits' in body and not body['splits']:
+                # User cleared splits
+                updated.pop('splits', None)
             # Learn from category change
             if body.get('category') and body['category'] != t.get('category'):
                 desc = updated.get('description', t.get('description', ''))
@@ -2195,7 +2226,7 @@ def api_budget_summary():
     days_in_month = (datetime(now.year, now.month % 12 + 1, 1) - timedelta(days=1)).day if now.month < 12 else 31
     days_left = days_in_month - now.day + 1
 
-    # Sum spending per category this month
+    # Sum spending per category this month (split-aware)
     cat_spend = {}
     for t in data.get('transactions', []):
         if t.get('type') != 'debit':
@@ -2204,9 +2235,16 @@ def api_budget_summary():
             continue
         if t.get('date', '') > today_str:
             continue  # skip future/scheduled
-        amt = to_gbp(t.get('amount', 0), t.get('currency', 'GBP'), rates)
-        cat = t.get('category', 'Other')
-        cat_spend[cat] = cat_spend.get(cat, 0) + amt
+        # If transaction has splits, distribute across split categories
+        if t.get('splits'):
+            for s in t['splits']:
+                s_cat = s.get('category', 'Other')
+                s_amt = to_gbp(s.get('amount', 0), t.get('currency', 'GBP'), rates)
+                cat_spend[s_cat] = cat_spend.get(s_cat, 0) + s_amt
+        else:
+            amt = to_gbp(t.get('amount', 0), t.get('currency', 'GBP'), rates)
+            cat = t.get('category', 'Other')
+            cat_spend[cat] = cat_spend.get(cat, 0) + amt
 
     user_cats = data.get('user_categories', [])
     pots = []
@@ -3937,6 +3975,233 @@ def receipt_image(filename):
     """Serve receipt image files."""
     from flask import send_from_directory
     return send_from_directory(RECEIPTS_DIR, filename)
+
+
+@app.route('/api/transactions/<txn_id>/attach-receipt', methods=['POST'])
+def attach_receipt_to_transaction(txn_id):
+    """Scan a receipt image and attach it to an existing transaction."""
+    import base64
+    import traceback
+
+    data = load_data()
+    txn = next((t for t in data['transactions'] if t.get('id') == txn_id), None)
+    if not txn:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    file = request.files.get('image')
+    currency = request.form.get('currency', txn.get('currency', 'GBP'))
+
+    if not file:
+        return jsonify({'error': 'No image uploaded'}), 400
+
+    try:
+        img_bytes = file.read()
+        if not img_bytes:
+            return jsonify({'error': 'Empty image file'}), 400
+
+        # Normalise image to JPEG via Pillow
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_bytes))
+            max_dim = 2048
+            if max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=85)
+            img_bytes = buf.getvalue()
+            media_type = 'image/jpeg'
+        except Exception:
+            if img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                media_type = 'image/png'
+            elif img_bytes[:2] == b'\xff\xd8':
+                media_type = 'image/jpeg'
+            else:
+                media_type = 'image/jpeg'
+
+        img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
+
+        # Claude Vision scan
+        prompt = f"""You are scanning a receipt image. Extract every single item and piece of information.
+Return a JSON object with this exact structure:
+{{"store": "store/merchant name", "store_category": "one of: Supermarket, Restaurant, Pharmacy, Petrol, Clothing, Electronics, DIY, Other",
+"date": "YYYY-MM-DD (use today if not visible)", "time": "HH:MM or null", "currency": "{currency}",
+"subtotal": 0.00, "tax": 0.00, "total": 0.00,
+"payment_method_hint": "cash/card/contactless/etc if visible, else null",
+"receipt_number": "receipt/transaction number if visible, else null",
+"items": [{{"name": "exact item name", "quantity": 1, "unit_price": 0.00, "total_price": 0.00,
+"category": "one of: Fresh Produce, Meat & Fish, Dairy & Eggs, Bakery, Frozen, Drinks, Snacks & Confectionery, Household, Personal Care, Baby, Pet, Alcohol, Tobacco, Clothing, Electronics, Fuel, Medicine, Other"}}]}}
+Be thorough — capture every line item. Return ONLY valid JSON."""
+
+        response = get_anthropic_client().messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=4000,
+            messages=[{'role': 'user', 'content': [
+                {'type': 'image', 'source': {'type': 'base64', 'media_type': media_type, 'data': img_b64}},
+                {'type': 'text', 'text': prompt}
+            ]}]
+        )
+
+        text = response.content[0].text.strip()
+        if text.startswith('```'):
+            text = '\n'.join(text.split('\n')[1:])
+            text = text.rsplit('```', 1)[0]
+        parsed = json.loads(text)
+
+        # Save image
+        receipt_id = str(uuid.uuid4())
+        img_ext = 'jpg' if media_type == 'image/jpeg' else media_type.split('/')[1]
+        img_filename = f"{receipt_id}.{img_ext}"
+        img_path = os.path.join(RECEIPTS_DIR, img_filename)
+        with open(img_path, 'wb') as f:
+            f.write(img_bytes)
+
+        # Build receipt record
+        account = next((a for a in data.get('accounts', []) if a['id'] == txn.get('account_id', '')), None)
+        receipt = {
+            'id': receipt_id,
+            'image_file': img_filename,
+            'account_id': txn.get('account_id', ''),
+            'account_name': account['name'] if account else '',
+            'account_bank': account.get('bank', '') if account else '',
+            'currency': currency,
+            'store': parsed.get('store', 'Unknown'),
+            'store_category': parsed.get('store_category', 'Other'),
+            'date': parsed.get('date', datetime.now().strftime('%Y-%m-%d')),
+            'time': parsed.get('time'),
+            'subtotal': parsed.get('subtotal', 0),
+            'tax': parsed.get('tax', 0),
+            'total': parsed.get('total', 0),
+            'payment_method_hint': parsed.get('payment_method_hint'),
+            'receipt_number': parsed.get('receipt_number'),
+            'items': parsed.get('items', []),
+            'scanned_at': datetime.now().isoformat(),
+            'added_to_transactions': True,
+            'transaction_id': txn_id
+        }
+
+        receipts = load_receipts()
+        receipts.append(receipt)
+        save_receipts(receipts)
+
+        # Link receipt to transaction
+        txn['receipt_id'] = receipt_id
+        save_data(data)
+
+        return jsonify({'ok': True, 'receipt': receipt})
+
+    except json.JSONDecodeError as e:
+        return jsonify({'error': f'Could not parse receipt data: {str(e)}'}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/transactions/<txn_id>/receipt', methods=['GET'])
+def get_transaction_receipt(txn_id):
+    """Get the receipt attached to a transaction."""
+    data = load_data()
+    txn = next((t for t in data['transactions'] if t.get('id') == txn_id), None)
+    if not txn:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    receipt_id = txn.get('receipt_id')
+    if not receipt_id:
+        return jsonify({'error': 'No receipt attached'}), 404
+
+    receipts = load_receipts()
+    receipt = next((r for r in receipts if r['id'] == receipt_id), None)
+    if not receipt:
+        return jsonify({'error': 'Receipt not found'}), 404
+
+    return jsonify(receipt)
+
+
+@app.route('/api/transactions/<txn_id>/receipt', methods=['DELETE'])
+def detach_receipt_from_transaction(txn_id):
+    """Remove receipt attachment from a transaction."""
+    data = load_data()
+    txn = next((t for t in data['transactions'] if t.get('id') == txn_id), None)
+    if not txn:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    receipt_id = txn.get('receipt_id')
+    if receipt_id:
+        del txn['receipt_id']
+        save_data(data)
+
+    return jsonify({'ok': True})
+
+
+@app.route('/api/transactions/<txn_id>/auto-split', methods=['POST'])
+def auto_split_from_receipt(txn_id):
+    """Auto-generate category splits from receipt item categories."""
+    data = load_data()
+    txn = next((t for t in data['transactions'] if t.get('id') == txn_id), None)
+    if not txn:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    receipt_id = txn.get('receipt_id')
+    if not receipt_id:
+        return jsonify({'error': 'No receipt attached'}), 404
+
+    receipts = load_receipts()
+    receipt = next((r for r in receipts if r['id'] == receipt_id), None)
+    if not receipt:
+        return jsonify({'error': 'Receipt not found'}), 404
+
+    # Map receipt item categories to app categories
+    cat_map = {
+        'Fresh Produce': 'Food & Dining', 'Meat & Fish': 'Food & Dining',
+        'Dairy & Eggs': 'Food & Dining', 'Bakery': 'Food & Dining',
+        'Frozen': 'Food & Dining', 'Drinks': 'Food & Dining',
+        'Snacks & Confectionery': 'Food & Dining',
+        'Household': 'Bills & Utilities', 'Personal Care': 'Personal Care',
+        'Baby': 'Shopping', 'Pet': 'Shopping',
+        'Alcohol': 'Food & Dining', 'Tobacco': 'Shopping',
+        'Clothing': 'Shopping', 'Electronics': 'Shopping',
+        'Fuel': 'Transport', 'Medicine': 'Health & Fitness',
+        'Other': 'Shopping'
+    }
+
+    # Group items by mapped category
+    groups = {}
+    for item in receipt.get('items', []):
+        app_cat = cat_map.get(item.get('category', 'Other'), 'Shopping')
+        if app_cat not in groups:
+            groups[app_cat] = {'amount': 0, 'items': []}
+        groups[app_cat]['amount'] += item.get('total_price', 0)
+        groups[app_cat]['items'].append(item.get('name', ''))
+
+    # Build splits
+    splits = []
+    for cat, info in sorted(groups.items(), key=lambda x: -x[1]['amount']):
+        splits.append({
+            'category': cat,
+            'amount': round(info['amount'], 2),
+            'note': ', '.join(info['items'][:3]) + ('...' if len(info['items']) > 3 else '')
+        })
+
+    # Adjust to match transaction amount
+    if splits:
+        split_total = sum(s['amount'] for s in splits)
+        txn_amount = txn.get('amount', 0)
+        if abs(split_total - txn_amount) > 0.01 and split_total > 0:
+            ratio = txn_amount / split_total
+            for s in splits:
+                s['amount'] = round(s['amount'] * ratio, 2)
+            # Fix rounding
+            diff = round(txn_amount - sum(s['amount'] for s in splits), 2)
+            if diff != 0:
+                splits[0]['amount'] = round(splits[0]['amount'] + diff, 2)
+
+    txn['splits'] = splits
+    if splits:
+        txn['category'] = splits[0]['category']  # largest first
+    save_data(data)
+
+    return jsonify({'ok': True, 'splits': splits})
 
 
 @app.route('/api/receipts/analytics', methods=['GET'])

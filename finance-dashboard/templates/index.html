@@ -116,7 +116,7 @@ body {
 }
 .sidebar-glow { display: none; }
 .logo {
-  padding: 24px 24px 20px;
+  padding: 18px 20px 14px;
   border-bottom: 1px solid var(--border);
   position: relative;
 }
@@ -131,8 +131,8 @@ body {
   text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px;
   font-weight: 500;
 }
-nav { flex: 1; padding: 16px 0; overflow-y: auto; }
-.nav-section { padding: 14px 20px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text3); font-weight: 600; }
+nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+.nav-section { padding: 8px 20px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text3); font-weight: 600; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 16px; cursor: pointer;
@@ -165,7 +165,7 @@ nav { flex: 1; padding: 16px 0; overflow-y: auto; }
 .topbar-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; letter-spacing: -0.2px; }
 .topbar-actions { display: flex; gap: 10px; }
 
-.content { flex: 1; padding: 28px 36px; }
+.content { flex: 1; padding: 18px 24px; }
 
 /* Sections */
 .section { display: none; }
@@ -175,9 +175,9 @@ nav { flex: 1; padding: 16px 0; overflow-y: auto; }
 /* Cards */
 .card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 22px;
+  border-radius: var(--radius); padding: 16px;
   position: relative; overflow: hidden;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .card-shine { display: none; }
 .card-label {
@@ -193,26 +193,26 @@ nav { flex: 1; padding: 16px 0; overflow-y: auto; }
 .delta-up { color: var(--teal); }
 .delta-down { color: var(--rose); }
 
-.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 22px; }
-.grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 22px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-bottom: 22px; }
-.grid-2-3 { display: grid; grid-template-columns: 2fr 3fr; gap: 22px; margin-bottom: 22px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 14px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 14px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.grid-2-3 { display: grid; grid-template-columns: 2fr 3fr; gap: 14px; margin-bottom: 14px; }
 
 /* Hero net worth card */
 .hero-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px; padding: 30px 34px;
-  margin-bottom: 22px; position: relative; overflow: hidden;
+  border-radius: 14px; padding: 20px 24px;
+  margin-bottom: 14px; position: relative; overflow: hidden;
 }
 .hero-card::before { display: none; }
 .hero-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text3); font-weight: 600; }
 .hero-value {
   font-family: var(--font-display); font-size: 52px; font-weight: 700;
-  color: var(--teal); line-height: 1; margin: 8px 0 18px;
+  color: var(--teal); line-height: 1; margin: 6px 0 10px;
   font-variant-numeric: tabular-nums; letter-spacing: -1px;
 }
-.hero-breakdown { display: flex; gap: 32px; flex-wrap: wrap; }
+.hero-breakdown { display: flex; gap: 24px; flex-wrap: wrap; }
 .hero-item { }
 .hero-item-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 500; }
 .hero-item-value { font-size: 16px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums; }
@@ -220,7 +220,7 @@ nav { flex: 1; padding: 16px 0; overflow-y: auto; }
 /* Chip filters */
 .filter-bar {
   display: flex; gap: 8px; flex-wrap: wrap;
-  padding: 14px 0; margin-bottom: 16px;
+  padding: 10px 0; margin-bottom: 12px;
   border-bottom: 1px solid var(--border);
   align-items: center;
 }
@@ -259,12 +259,12 @@ nav { flex: 1; padding: 16px 0; overflow-y: auto; }
 .txn-table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
-  text-align: left; padding: 8px 14px;
+  text-align: left; padding: 6px 10px;
   font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px;
   color: var(--text3); font-weight: 500;
   border-bottom: 1px solid var(--border);
 }
-td { padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.025); vertical-align: middle; }
+td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.025); vertical-align: middle; }
 tr:hover td { background: rgba(255,255,255,0.015); }
 tr.future-row td { opacity: 0.7; }
 tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
@@ -291,9 +291,9 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 .action-btn.edit:hover { color: var(--lavender); background: rgba(59,130,246,0.1); }
 
 /* Charts */
-.chart-wrap { position: relative; height: 220px; }
-.chart-wrap-md { position: relative; height: 260px; }
-.chart-wrap-sm { position: relative; height: 200px; }
+.chart-wrap { position: relative; height: 190px; }
+.chart-wrap-md { position: relative; height: 220px; }
+.chart-wrap-sm { position: relative; height: 160px; }
 .toggle-switch { position:relative;display:inline-block;width:36px;height:20px;cursor:pointer }
 .toggle-switch input { opacity:0;width:0;height:0 }
 .toggle-slider { position:absolute;inset:0;background:var(--border);border-radius:20px;transition:.2s }
@@ -306,14 +306,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 .contrib-input:focus { outline:none;border-color:var(--gold) }
 .inv-bucket { background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:border-color 0.2s }
 .inv-bucket:hover { border-color:var(--border2) }
-.inv-bucket-header { display:flex;justify-content:space-between;align-items:center;padding:16px 20px;cursor:pointer;user-select:none }
+.inv-bucket-header { display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;user-select:none }
 .inv-bucket-header:hover { background:rgba(255,255,255,0.02) }
 .inv-bucket-chevron { color:var(--text3);font-size:12px;transition:transform 0.2s;width:16px;flex-shrink:0 }
 .inv-bucket-chevron.open { transform:rotate(90deg);color:var(--gold) }
-.inv-bucket-body { padding:0 20px 16px;border-top:1px solid var(--border) }
+.inv-bucket-body { padding:0 16px 12px;border-top:1px solid var(--border) }
 .milestone-row { display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:8px }
 .fire-badge { display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:0.5px }
-.chart-wrap-lg { position: relative; height: 320px; }
+.chart-wrap-lg { position: relative; height: 260px; }
 
 /* Forms & inputs */
 .form-group { display: flex; flex-direction: column; gap: 5px; }
@@ -359,14 +359,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
 .modal {
   background: var(--surface); border: 1px solid var(--border2);
-  border-radius: 18px; padding: 28px; width: 520px; max-width: 95vw;
+  border-radius: 18px; padding: 20px; width: 520px; max-width: 95vw;
   max-height: 90vh; overflow-y: auto;
   transform: translateY(20px); transition: transform 0.2s;
 }
 .modal-overlay.open .modal { transform: translateY(0); }
 .modal-header {
   display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 22px;
+  margin-bottom: 14px;
 }
 .modal-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; letter-spacing: -0.2px; }
 .modal-close {
@@ -374,7 +374,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
   color: var(--text3); font-size: 20px; padding: 4px; line-height: 1;
 }
 .modal-close:hover { color: var(--text); }
-.modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 
 /* Toggle */
 .type-toggle {
@@ -393,7 +393,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 /* Upload zone */
 .upload-zone {
   border: 2px dashed var(--border2); border-radius: var(--radius);
-  padding: 28px; text-align: center; cursor: pointer;
+  padding: 18px; text-align: center; cursor: pointer;
   transition: all 0.2s; background: var(--surface2);
   display: block;
 }
@@ -421,7 +421,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
 /* Investments */
 .holding-row {
-  display: flex; align-items: center; padding: 11px 0;
+  display: flex; align-items: center; padding: 8px 0;
   border-bottom: 1px solid var(--border); gap: 10px;
 }
 .holding-name { flex: 1; font-weight: 500; font-size: 13px; }
@@ -480,7 +480,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 .budget-pot:hover .budget-pot-edit { opacity:1; }
 
 /* Financial Health */
-.fh-gauge-wrap { display:flex; align-items:center; gap:24px; margin-bottom:16px; }
+.fh-gauge-wrap { display:flex; align-items:center; gap:18px; margin-bottom:12px; }
 .fh-components { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px; margin-bottom:14px; }
 .fh-comp {
   background: var(--surface2); border:1px solid var(--border); border-radius:8px;
@@ -507,20 +507,34 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
   background:rgba(255,255,255,0.04); border:1px solid var(--border);
 }
 
+/* Collapsible card sections */
+.card-header-row {
+  display:flex; justify-content:space-between; align-items:center; cursor:pointer;
+  user-select:none; margin-bottom:6px;
+}
+.card-header-row:hover .card-chevron { color: var(--gold); }
+.card-chevron {
+  font-size:11px; color:var(--text3); transition: transform 0.2s, color 0.2s;
+  flex-shrink:0; margin-left:8px;
+}
+.card-chevron.open { transform:rotate(90deg); color:var(--gold); }
+.card-body-collapsible { transition: max-height 0.25s ease, opacity 0.2s ease; overflow:hidden; }
+.card-body-collapsible.collapsed { max-height:0 !important; opacity:0; overflow:hidden; }
+
 /* Legacy card compat */
 .account-card { display:none; }
 .account-name, .account-bank, .account-stats, .account-stat-label, .account-stat-value { }
 
 /* Summary pills */
 .summary-row {
-  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+  display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
 }
 .summary-pill {
   background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 10px; padding: 10px 16px; flex: 1; min-width: 120px;
+  border-radius: 10px; padding: 8px 14px; flex: 1; min-width: 100px;
 }
 .summary-pill-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text3); font-weight: 500; }
-.summary-pill-value { font-size: 20px; font-weight: 700; font-family: var(--font-display); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.summary-pill-value { font-size: 18px; font-weight: 700; font-family: var(--font-display); margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 /* Toast */
 .toast {
@@ -543,7 +557,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+.empty-state { text-align: center; padding: 32px 16px; color: var(--text3); }
 .empty-state svg { width: 40px; height: 40px; margin-bottom: 10px; opacity: 0.3; }
 .empty-state p { font-size: 13px; }
 
@@ -561,11 +575,36 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
   .grid-4 { grid-template-columns: repeat(2,1fr); }
   .grid-2-3 { grid-template-columns: 1fr; }
 }
+@media (max-width: 1024px) {
+  .grid-3 { grid-template-columns: repeat(2,1fr); }
+  .content { padding: 14px 18px; }
+  .hero-card { padding: 16px 20px; }
+  .hero-value { font-size: 42px; }
+  .hero-breakdown { gap: 16px; }
+}
 @media (max-width: 768px) {
   .sidebar { display: none; }
-  .content { padding: 16px; }
-  .grid-2 { grid-template-columns: 1fr; }
-  .hero-value { font-size: 38px; }
+  .content { padding: 12px; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-4 { grid-template-columns: repeat(2,1fr); gap: 8px; }
+  .hero-card { padding: 14px 16px; margin-bottom: 10px; }
+  .hero-value { font-size: 34px; }
+  .hero-breakdown { gap: 12px; }
+  .hero-item-value { font-size: 14px; }
+  .card { padding: 12px; margin-bottom: 10px; }
+  .chart-wrap-lg { height: 220px; }
+  .chart-wrap-md { height: 190px; }
+  .chart-wrap { height: 160px; }
+  .chart-wrap-sm { height: 140px; }
+  td { padding: 6px 8px; }
+  th { padding: 5px 8px; }
+  .summary-pill { padding: 6px 10px; min-width: 80px; }
+  .summary-pill-value { font-size: 16px; }
+  .modal { padding: 16px; width: 95vw; }
+  .topbar { padding: 12px 16px; }
+  .filter-bar { padding: 8px 0; margin-bottom: 8px; }
+  .inv-bucket-header { padding: 10px 12px; }
+  .acct-row { padding: 10px 12px; gap: 10px; }
 }
 </style>
 </head>
@@ -802,14 +841,22 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       </div>
 
       <!-- Charts row -->
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-label" style="margin-bottom:14px">Income vs Spending (6 months)</div>
-          <div class="chart-wrap-md"><canvas id="chart-trend"></canvas></div>
+      <div class="card" data-collapse-id="ov-charts">
+        <div class="card-header-row" onclick="toggleSection('ov-charts')">
+          <div class="card-label" style="margin-bottom:0">Charts</div>
+          <span class="card-chevron open" id="cc-ov-charts">▸</span>
         </div>
-        <div class="card">
-          <div class="card-label" style="margin-bottom:14px">Asset Allocation</div>
-          <div class="chart-wrap-md"><canvas id="chart-alloc"></canvas></div>
+        <div class="card-body-collapsible" id="cb-ov-charts">
+          <div class="grid-2" style="margin-bottom:0;margin-top:10px">
+            <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px">
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Income vs Spending (6 months)</div>
+              <div class="chart-wrap-md"><canvas id="chart-trend"></canvas></div>
+            </div>
+            <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px">
+              <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Asset Allocation</div>
+              <div class="chart-wrap-md"><canvas id="chart-alloc"></canvas></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -842,9 +889,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       </div>
 
       <!-- Spending by category -->
-      <div class="card">
-        <div class="card-label" style="margin-bottom:14px">Spending by Category</div>
-        <div class="chart-wrap-md"><canvas id="chart-cat"></canvas></div>
+      <div class="card" data-collapse-id="ov-cat-chart">
+        <div class="card-header-row" onclick="toggleSection('ov-cat-chart')">
+          <div class="card-label" style="margin-bottom:0">Spending by Category</div>
+          <span class="card-chevron open" id="cc-ov-cat-chart">▸</span>
+        </div>
+        <div class="card-body-collapsible" id="cb-ov-cat-chart">
+          <div class="chart-wrap-md" style="margin-top:8px"><canvas id="chart-cat"></canvas></div>
+        </div>
       </div>
 
       <!-- Financial Health Score -->
@@ -900,9 +952,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div class="card"><div class="card-shine"></div><div class="card-label">Mortgage</div><div class="card-value neg" id="nw-mortgage">£—</div><div class="card-sub pv" id="nw-mortgage-sub" style="display:none"></div></div>
         <div class="card"><div class="card-shine"></div><div class="card-label">Other Debts</div><div class="card-value neg" id="nw-other-debts">£—</div><div class="card-sub pv" id="nw-debts-sub" style="display:none"></div></div>
       </div>
-      <div class="card">
-        <div class="card-label" style="margin-bottom:14px">Net Worth Composition</div>
-        <div class="chart-wrap-md"><canvas id="chart-nw"></canvas></div>
+      <div class="card" data-collapse-id="nw-composition">
+        <div class="card-header-row" onclick="toggleSection('nw-composition')">
+          <div class="card-label" style="margin-bottom:0">Net Worth Composition</div>
+          <span class="card-chevron open" id="cc-nw-composition">▸</span>
+        </div>
+        <div class="card-body-collapsible" id="cb-nw-composition">
+          <div class="chart-wrap-md" style="margin-top:8px"><canvas id="chart-nw"></canvas></div>
+        </div>
       </div>
       <!-- NW History -->
       <div class="card" id="nw-history-card" style="display:none">
@@ -950,16 +1007,21 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div class="card"><div class="card-shine"></div><div class="card-label">In 6 Months</div><div class="card-value" id="fc-6">£—</div><div class="card-sub">Projected balance</div></div>
         <div class="card"><div class="card-shine"></div><div class="card-label">In 12 Months</div><div class="card-value" id="fc-12">£—</div><div class="card-sub">Projected balance</div></div>
       </div>
-      <div class="card" style="margin-bottom:20px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="card-label">12-Month Balance Projection</div>
-          <div style="display:flex;gap:8px;font-size:11px">
-            <span style="color:var(--gold)">━</span><span class="muted">Projected balance</span>
-            <span style="color:var(--teal)">↑</span><span class="muted">Scheduled income</span>
-            <span style="color:var(--rose)">↓</span><span class="muted">Scheduled spend</span>
+      <div class="card" style="margin-bottom:14px" data-collapse-id="fc-chart">
+        <div class="card-header-row" onclick="toggleSection('fc-chart')">
+          <div style="display:flex;align-items:center;gap:12px;flex:1">
+            <div class="card-label" style="margin-bottom:0">12-Month Balance Projection</div>
+            <div style="display:flex;gap:8px;font-size:11px">
+              <span style="color:var(--gold)">━</span><span class="muted">Balance</span>
+              <span style="color:var(--teal)">↑</span><span class="muted">Income</span>
+              <span style="color:var(--rose)">↓</span><span class="muted">Spend</span>
+            </div>
           </div>
+          <span class="card-chevron open" id="cc-fc-chart">▸</span>
         </div>
-        <div class="chart-wrap-lg"><canvas id="chart-forecast"></canvas></div>
+        <div class="card-body-collapsible" id="cb-fc-chart">
+          <div class="chart-wrap-lg" style="margin-top:6px"><canvas id="chart-forecast"></canvas></div>
+        </div>
       </div>
       <div class="card">
         <div class="card-label" style="margin-bottom:12px">Scheduled Future Transactions</div>
@@ -1028,8 +1090,14 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
       </div>
 
       <!-- Chart mini -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="chart-wrap"><canvas id="chart-txn-bar"></canvas></div>
+      <div class="card" style="margin-bottom:12px" data-collapse-id="txn-chart">
+        <div class="card-header-row" onclick="toggleSection('txn-chart')">
+          <div class="card-label" style="margin-bottom:0">Spending Chart</div>
+          <span class="card-chevron open" id="cc-txn-chart">▸</span>
+        </div>
+        <div class="card-body-collapsible" id="cb-txn-chart">
+          <div class="chart-wrap" style="margin-top:6px"><canvas id="chart-txn-bar"></canvas></div>
+        </div>
       </div>
 
       <!-- Spending Insights (collapsible) -->
@@ -3088,6 +3156,51 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <input class="form-input" id="txn-notes" type="text" placeholder="Extra details...">
       </div>
     </div>
+    <!-- Split Categories -->
+    <div id="txn-split-section" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" id="txn-split-toggle" onclick="toggleSplitMode()" style="font-size:11px;padding:4px 10px">✂ Split</button>
+        <span id="txn-split-label" style="font-size:11px;color:var(--text3);display:none">Split across categories</span>
+      </div>
+      <div id="txn-split-builder" style="display:none">
+        <div id="txn-split-rows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <button class="btn btn-ghost btn-sm" onclick="addSplitRow()" style="font-size:11px;padding:3px 8px">+ Add Split</button>
+          <span id="txn-split-balance" style="font-size:11px;font-weight:600"></span>
+        </div>
+        <div id="txn-split-auto-btn" style="display:none;margin-top:6px">
+          <button class="btn btn-teal btn-sm" onclick="autoSplitFromReceipt()" style="font-size:11px">🧾 Auto-split from receipt</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receipt Scanner -->
+    <div style="margin-bottom:12px">
+      <label class="form-label" style="margin-bottom:6px">📎 Receipt</label>
+      <div id="txn-receipt-zone" style="border:2px dashed var(--border2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surface2)"
+        onclick="document.getElementById('txn-receipt-input').click()"
+        ondragover="event.preventDefault();this.style.borderColor='var(--gold)'"
+        ondragleave="this.style.borderColor='var(--border2)'"
+        ondrop="event.preventDefault();this.style.borderColor='var(--border2)';handleTxnReceiptDrop(event)">
+        <input type="file" id="txn-receipt-input" accept="image/*" style="display:none" onchange="handleTxnReceiptSelect(this)">
+        <div id="txn-receipt-placeholder" style="font-size:12px;color:var(--text3)">📷 Drop receipt image here or click to scan</div>
+        <div id="txn-receipt-scanning" style="display:none;font-size:12px;color:var(--gold)"><span class="spinner"></span> Scanning receipt...</div>
+      </div>
+      <!-- Receipt preview after scan -->
+      <div id="txn-receipt-preview" style="display:none;margin-top:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-size:12px;font-weight:600" id="txn-receipt-store"></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="useReceiptData()" style="font-size:10px;padding:2px 8px;color:var(--teal)">Use data</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearTxnReceipt()" style="font-size:10px;padding:2px 8px;color:var(--rose)">✕</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px"><span id="txn-receipt-item-count">0</span> items · Total: <span id="txn-receipt-total">£0</span></div>
+        <div id="txn-receipt-items-list" style="max-height:120px;overflow-y:auto;font-size:11px">
+        </div>
+      </div>
+    </div>
+
     <div id="txn-future-hint" style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--lavender);display:none;margin-bottom:12px">
       ⏰ This is a future date — it will be saved as a <strong>scheduled transaction</strong> and included in your 12-month forecast.
     </div>
@@ -3342,6 +3455,33 @@ let charts = {};
 let filters = { time: 'all', type: 'all', account: '', category: '', search: '' };
 let editingTxnType = 'debit';
 
+// ── Collapsible Sections ──────────────────────────────────────────────────────
+const _sectionState = JSON.parse(localStorage.getItem('cardCollapseState') || '{}');
+function toggleSection(cardId) {
+  const body = document.getElementById('cb-' + cardId);
+  const chev = document.getElementById('cc-' + cardId);
+  if (!body) return;
+  const isOpen = !body.classList.contains('collapsed');
+  body.classList.toggle('collapsed', isOpen);
+  if (chev) chev.classList.toggle('open', !isOpen);
+  _sectionState[cardId] = !isOpen;
+  localStorage.setItem('cardCollapseState', JSON.stringify(_sectionState));
+}
+function initCollapsibleSections() {
+  document.querySelectorAll('[data-collapse-id]').forEach(el => {
+    const id = el.dataset.collapseId;
+    const body = document.getElementById('cb-' + id);
+    const chev = document.getElementById('cc-' + id);
+    if (_sectionState[id] === false) {
+      if (body) body.classList.add('collapsed');
+      if (chev) chev.classList.remove('open');
+    } else {
+      if (body) body.classList.remove('collapsed');
+      if (chev) chev.classList.add('open');
+    }
+  });
+}
+
 // ── Navigation ────────────────────────────────────────────────────────────────
 const sectionTitles = {
   overview:'Overview', networth:'Net Worth', forecast:'12-Month Forecast', retirement:'Retirement Planner',
@@ -3455,14 +3595,17 @@ async function load() {
 function renderAll() {
   if(!D) return;
   initGlobal();
+  initCollapsibleSections();
   applyIdentityMasking();
   initDemoMode();
   loadReceipts();
   loadBanks();
   loadSpendingInsights();
   const r = D.exchange_rates || {};
-  document.getElementById('rate-inr').textContent = (r.INR||0).toFixed(6) + ' GBP';
-  document.getElementById('rate-usd').textContent = (r.USD||0).toFixed(4) + ' GBP';
+  const rateInr = document.getElementById('rate-inr');
+  const rateUsd = document.getElementById('rate-usd');
+  if (rateInr) rateInr.textContent = (r.INR||0).toFixed(6) + ' GBP';
+  if (rateUsd) rateUsd.textContent = (r.USD||0).toFixed(4) + ' GBP';
   // Dynamic sidebar rates
   const ratesEl = document.getElementById('sidebar-rates');
   const dispCurrs = (D.global_settings?.display_currencies || ['GBP','USD','INR']).filter(c=>c!=='GBP');
@@ -3888,10 +4031,10 @@ function renderTransactions(txns) {
       <td style="padding:8px 4px 8px 14px;width:28px"><input type="checkbox" class="txn-cb" data-id="${t.id}" style="accent-color:var(--gold);cursor:pointer" onchange="toggleTxnSelect('${t.id}',this.checked)"></td>
       <td style="color:var(--text3);font-size:12px;white-space:nowrap">${t.date||'—'}</td>
       <td>
-        <div style="font-weight:500">${t.description||'—'}${mortBadge}</div>
+        <div style="font-weight:500">${t.description||'—'}${mortBadge}${t.receipt_id?`<span onclick="toggleReceiptItems('${t.id}',event)" style="cursor:pointer;margin-left:4px;font-size:12px;opacity:0.6" title="Has receipt — click to expand">📎</span>`:''}</div>
         ${t.notes?`<div style="font-size:11px;color:var(--text3)">${t.notes}</div>`:''}
       </td>
-      <td><span class="cat-tag">${t.category||'Other'}</span></td>
+      <td>${t.splits&&t.splits.length>0?t.splits.slice(0,2).map(s=>`<span class="cat-tag" style="margin-right:2px;font-size:10px">${s.category} £${s.amount.toFixed(0)}</span>`).join('')+(t.splits.length>2?`<span style="font-size:10px;color:var(--text3)">+${t.splits.length-2}</span>`:''):`<span class="cat-tag">${t.category||'Other'}</span>`}</td>
       <td style="color:var(--text3);font-size:12px">${maskBank(accMap[t.account_id]||t.bank||'—')}</td>
       <td style="color:var(--text3)" class="privacy-blur">${origAmt}</td>
       <td class="${t.type==='credit'?'amount-credit':'amount-debit'} privacy-blur">${t.type==='credit'?'+':'−'}${fmtGBP(t.amount_gbp)}</td>
@@ -3904,8 +4047,51 @@ function renderTransactions(txns) {
         <button class="action-btn edit" onclick="editTxn('${t.id}')">✏</button>
         <button class="action-btn" onclick="deleteTxn('${t.id}')">✕</button>
       </td>
-    </tr>`;
+    </tr>${t.receipt_id?`<tr id="receipt-row-${t.id}" style="display:none"><td colspan="9" style="padding:6px 14px 10px 42px;background:var(--surface2);border-bottom:1px solid var(--border)"><div id="receipt-items-${t.id}" style="font-size:11px;color:var(--text2)"><span class="spinner" style="width:12px;height:12px"></span> Loading items...</div></td></tr>`:''}`;
   }).join('');
+}
+
+// ── Receipt Items Expand ──────────────────────────────────────────────────────
+const _receiptCache = {};
+async function toggleReceiptItems(txnId, e) {
+  if (e) e.stopPropagation();
+  const row = document.getElementById('receipt-row-' + txnId);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  row.style.display = isOpen ? 'none' : '';
+  if (!isOpen && !_receiptCache[txnId]) {
+    try {
+      const r = await fetch(`/api/transactions/${txnId}/receipt`);
+      const receipt = await r.json();
+      _receiptCache[txnId] = receipt;
+      renderReceiptItemsRow(txnId, receipt);
+    } catch(e) {
+      document.getElementById('receipt-items-' + txnId).innerHTML = '<span style="color:var(--rose)">Failed to load receipt</span>';
+    }
+  } else if (!isOpen && _receiptCache[txnId]) {
+    renderReceiptItemsRow(txnId, _receiptCache[txnId]);
+  }
+}
+function renderReceiptItemsRow(txnId, receipt) {
+  const el = document.getElementById('receipt-items-' + txnId);
+  if (!el || !receipt) return;
+  const items = receipt.items || [];
+  const sym = {GBP:'£',INR:'₹',USD:'$',EUR:'€'}[receipt.currency||'GBP']||'£';
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <span style="font-weight:600;font-size:12px">🧾 ${receipt.store||'Receipt'}</span>
+      <span style="color:var(--text3)">${items.length} items · ${sym}${(receipt.total||0).toFixed(2)}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:3fr 1fr 1fr 2fr;gap:2px 8px;font-size:11px">
+      <div style="color:var(--text3);font-weight:600">Item</div><div style="color:var(--text3);font-weight:600;text-align:right">Qty</div><div style="color:var(--text3);font-weight:600;text-align:right">Price</div><div style="color:var(--text3);font-weight:600">Category</div>
+      ${items.map(i => `
+        <div>${i.name}</div>
+        <div style="text-align:right">${i.quantity||1}</div>
+        <div style="text-align:right">${sym}${(i.total_price||0).toFixed(2)}</div>
+        <div><span class="cat-tag" style="font-size:9px;padding:1px 5px">${i.category||'Other'}</span></div>
+      `).join('')}
+    </div>
+  `;
 }
 
 // ── Accounts ──────────────────────────────────────────────────────────────────
@@ -7591,6 +7777,17 @@ function openModal(id, data) {
     setType('debit');
     checkFutureHint();
     document.getElementById('txn-date').addEventListener('change', checkFutureHint);
+    // Reset receipt and split state for new transaction
+    clearTxnReceipt();
+    txnReceiptData = null;
+    splitMode = false;
+    splitRows = [];
+    document.getElementById('txn-split-builder').style.display = 'none';
+    document.getElementById('txn-split-label').style.display = 'none';
+    document.getElementById('txn-category').parentElement.style.display = '';
+    const stgl = document.getElementById('txn-split-toggle');
+    stgl.style.background = '';stgl.style.borderColor='';stgl.style.color='';
+    document.getElementById('txn-split-auto-btn').style.display = 'none';
   }
 }
 function closeModal(id) { document.getElementById(id+'-overlay').classList.remove('open'); }
@@ -7635,6 +7832,194 @@ function editTxn(id) {
       recurBanner.dataset.recurringId = '';
     }
   }
+
+  // Load receipt if attached
+  clearTxnReceipt();
+  txnReceiptData = null;
+  if (t.receipt_id) {
+    fetch(`/api/transactions/${id}/receipt`).then(r=>r.json()).then(receipt => {
+      if (receipt && receipt.items) {
+        txnReceiptData = receipt;
+        showTxnReceiptPreview(receipt);
+      }
+    }).catch(()=>{});
+  }
+
+  // Load splits if present
+  splitMode = false;
+  splitRows = [];
+  document.getElementById('txn-split-builder').style.display = 'none';
+  document.getElementById('txn-split-label').style.display = 'none';
+  document.getElementById('txn-category').parentElement.style.display = '';
+  const toggle = document.getElementById('txn-split-toggle');
+  toggle.style.background = '';
+  toggle.style.borderColor = '';
+  toggle.style.color = '';
+  if (t.splits && t.splits.length > 0) {
+    splitRows = t.splits.map(s => ({...s}));
+    toggleSplitMode();
+  }
+}
+
+// ── Receipt Scanner in Transaction Modal ──────────────────────────────────────
+let txnReceiptData = null; // holds scanned receipt until save
+
+function handleTxnReceiptDrop(e) {
+  const file = e.dataTransfer?.files?.[0];
+  if (file && file.type.startsWith('image/')) scanTxnReceipt(file);
+}
+function handleTxnReceiptSelect(input) {
+  const file = input.files?.[0];
+  if (file) scanTxnReceipt(file);
+  input.value = '';
+}
+async function scanTxnReceipt(file) {
+  const editId = document.getElementById('txn-edit-id').value;
+  const currency = document.getElementById('txn-currency').value || 'GBP';
+  document.getElementById('txn-receipt-placeholder').style.display = 'none';
+  document.getElementById('txn-receipt-scanning').style.display = '';
+
+  const fd = new FormData();
+  fd.append('image', file);
+  fd.append('currency', currency);
+
+  try {
+    let resp, data;
+    if (editId) {
+      // Attach directly to existing transaction
+      resp = await fetch(`/api/transactions/${editId}/attach-receipt`, { method:'POST', body: fd });
+      data = await resp.json();
+    } else {
+      // Scan inline (use existing scan endpoint, will link on save)
+      resp = await fetch('/api/receipts/scan', { method:'POST', body: fd });
+      data = await resp.json();
+    }
+    if (!data.ok && !data.receipt) throw new Error(data.error || 'Scan failed');
+    txnReceiptData = data.receipt;
+    showTxnReceiptPreview(txnReceiptData);
+  } catch(err) {
+    toast('Receipt scan failed: ' + err.message, 'error');
+    document.getElementById('txn-receipt-placeholder').style.display = '';
+  }
+  document.getElementById('txn-receipt-scanning').style.display = 'none';
+}
+function showTxnReceiptPreview(r) {
+  document.getElementById('txn-receipt-zone').style.display = 'none';
+  const prev = document.getElementById('txn-receipt-preview');
+  prev.style.display = '';
+  document.getElementById('txn-receipt-store').textContent = r.store || 'Unknown Store';
+  document.getElementById('txn-receipt-item-count').textContent = (r.items || []).length;
+  const sym = {GBP:'£',INR:'₹',USD:'$',EUR:'€'}[r.currency||'GBP']||'£';
+  document.getElementById('txn-receipt-total').textContent = sym + (r.total||0).toFixed(2);
+  const list = document.getElementById('txn-receipt-items-list');
+  list.innerHTML = (r.items||[]).map(i =>
+    `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border)">
+      <span>${i.name}${i.quantity>1?' ×'+i.quantity:''}</span>
+      <span style="color:var(--text2)">${sym}${(i.total_price||0).toFixed(2)}</span>
+    </div>`
+  ).join('');
+  // Show auto-split button if receipt has items
+  document.getElementById('txn-split-auto-btn').style.display = (r.items||[]).length > 0 ? '' : 'none';
+}
+function clearTxnReceipt() {
+  txnReceiptData = null;
+  document.getElementById('txn-receipt-preview').style.display = 'none';
+  document.getElementById('txn-receipt-zone').style.display = '';
+  document.getElementById('txn-receipt-placeholder').style.display = '';
+  document.getElementById('txn-split-auto-btn').style.display = 'none';
+}
+function useReceiptData() {
+  if (!txnReceiptData) return;
+  const r = txnReceiptData;
+  if (r.total) document.getElementById('txn-amount').value = r.total;
+  if (r.store) document.getElementById('txn-desc').value = r.store;
+  if (r.date) document.getElementById('txn-date').value = r.date;
+  // Auto-categorize based on store_category
+  const catMap = {'Supermarket':'Food & Dining','Restaurant':'Food & Dining','Pharmacy':'Health & Fitness','Petrol':'Transport','Clothing':'Shopping','Electronics':'Shopping','DIY':'Shopping'};
+  const cat = catMap[r.store_category] || 'Shopping';
+  const sel = document.getElementById('txn-category');
+  for(let i=0;i<sel.options.length;i++) if(sel.options[i].value===cat) { sel.selectedIndex=i; break; }
+  toast('Receipt data applied ✓');
+}
+
+// ── Split Categories ─────────────────────────────────────────────────────────
+let splitMode = false;
+let splitRows = [];
+
+function toggleSplitMode() {
+  splitMode = !splitMode;
+  const builder = document.getElementById('txn-split-builder');
+  const label = document.getElementById('txn-split-label');
+  const catGroup = document.getElementById('txn-category').parentElement;
+  const toggle = document.getElementById('txn-split-toggle');
+  if (splitMode) {
+    builder.style.display = '';
+    label.style.display = '';
+    catGroup.style.display = 'none';
+    toggle.style.background = 'var(--gold-dim)';
+    toggle.style.borderColor = 'var(--gold)';
+    toggle.style.color = 'var(--gold)';
+    if (splitRows.length === 0) { addSplitRow(); addSplitRow(); }
+    updateSplitBalance();
+  } else {
+    builder.style.display = 'none';
+    label.style.display = 'none';
+    catGroup.style.display = '';
+    toggle.style.background = '';
+    toggle.style.borderColor = '';
+    toggle.style.color = '';
+    splitRows = [];
+  }
+}
+function addSplitRow() {
+  const idx = splitRows.length;
+  splitRows.push({ category: '', amount: 0, note: '' });
+  renderSplitRows();
+}
+function removeSplitRow(idx) {
+  splitRows.splice(idx, 1);
+  renderSplitRows();
+  updateSplitBalance();
+}
+function renderSplitRows() {
+  const container = document.getElementById('txn-split-rows');
+  const cats = D?.categories_list || [];
+  container.innerHTML = splitRows.map((s, i) => `
+    <div style="display:flex;gap:6px;align-items:center">
+      <select class="form-select" style="flex:2;padding:6px 8px;font-size:12px" onchange="splitRows[${i}].category=this.value">
+        <option value="">Category...</option>
+        ${cats.map(c => `<option value="${c}" ${c===s.category?'selected':''}>${c}</option>`).join('')}
+      </select>
+      <input class="form-input" type="number" step="0.01" placeholder="£" style="flex:1;padding:6px 8px;font-size:12px" value="${s.amount||''}" oninput="splitRows[${i}].amount=parseFloat(this.value)||0;updateSplitBalance()">
+      <input class="form-input" type="text" placeholder="Note" style="flex:1;padding:6px 8px;font-size:12px" value="${s.note||''}" oninput="splitRows[${i}].note=this.value">
+      <button style="background:none;border:none;cursor:pointer;color:var(--rose);font-size:14px;padding:2px" onclick="removeSplitRow(${i})">✕</button>
+    </div>
+  `).join('');
+}
+function updateSplitBalance() {
+  const total = parseFloat(document.getElementById('txn-amount').value) || 0;
+  const splitTotal = splitRows.reduce((s, r) => s + (r.amount || 0), 0);
+  const diff = Math.round((total - splitTotal) * 100) / 100;
+  const el = document.getElementById('txn-split-balance');
+  if (Math.abs(diff) < 0.01) {
+    el.innerHTML = '<span style="color:var(--teal)">✓ Balanced</span>';
+  } else {
+    el.innerHTML = `<span style="color:var(--rose)">⚠ ${diff > 0 ? '£'+diff.toFixed(2)+' remaining' : '£'+Math.abs(diff).toFixed(2)+' over'}</span>`;
+  }
+}
+async function autoSplitFromReceipt() {
+  const editId = document.getElementById('txn-edit-id').value;
+  if (!editId) { toast('Save the transaction first, then auto-split', 'info'); return; }
+  try {
+    const r = await fetch(`/api/transactions/${editId}/auto-split`, { method:'POST' });
+    const d = await r.json();
+    if (!d.ok) { toast(d.error || 'Auto-split failed', 'error'); return; }
+    splitRows = d.splits || [];
+    if (!splitMode) toggleSplitMode();
+    renderSplitRows();
+    updateSplitBalance();
+    toast(`Split into ${splitRows.length} categories ✓`);
+  } catch(e) { toast('Auto-split failed', 'error'); }
 }
 
 async function saveTxn() {
@@ -7649,6 +8034,18 @@ async function saveTxn() {
     notes: document.getElementById('txn-notes').value,
     type: editingTxnType,
   };
+  // Add splits if in split mode
+  if (splitMode && splitRows.length > 0) {
+    const validSplits = splitRows.filter(s => s.category && s.amount > 0);
+    if (validSplits.length > 0) {
+      body.splits = validSplits;
+      body.category = validSplits.sort((a,b) => b.amount - a.amount)[0].category;
+    }
+  }
+  // Add receipt_id if we scanned a receipt for a new transaction
+  if (txnReceiptData && !editId) {
+    body.receipt_id = txnReceiptData.id;
+  }
   if(!body.description || !body.amount) { toast('Description and amount required', 'error'); return; }
 
   if(editId) {
