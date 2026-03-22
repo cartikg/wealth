@@ -9661,6 +9661,14 @@ async function loadBanks() {
     tlStatus = await tlR.json();
     plaidStatus = await plaidR.json();
     renderBanks();
+
+    // Auto-discover credit cards for connections that pre-date cards support
+    if (tlStatus.connections?.some(c => !c.cards || c.cards.length === 0)) {
+      fetch('/api/truelayer/discover-cards', { method: 'POST', headers: authH })
+        .then(r => r.json())
+        .then(d => { if (d.total_cards > 0) { console.log(`[TL] Discovered ${d.total_cards} credit cards`); loadBanks(); } })
+        .catch(() => {});
+    }
   } catch(e) {
     console.error('Failed to load bank status:', e);
   }

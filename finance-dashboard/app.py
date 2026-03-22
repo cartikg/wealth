@@ -5292,6 +5292,47 @@ def tl_callback():
         return f'<script>window.opener&&window.opener.postMessage({{type:"tl_error",error:"{str(e)}"}},"*");window.close();</script>'
 
 
+@app.route('/api/truelayer/discover-cards', methods=['POST'])
+def tl_discover_cards():
+    """Discover credit cards for existing TrueLayer connections that were created before cards support."""
+    connections = load_tl_connections()
+    if not connections:
+        return jsonify({'error': 'No banks connected'}), 400
+
+    total_cards = 0
+    errors = []
+    for conn in connections:
+        if 'cards' in conn and conn['cards']:
+            total_cards += len(conn['cards'])
+            continue
+        try:
+            cards_data, cards_err = tl_get(conn, '/data/v1/cards')
+            if cards_data:
+                conn['cards'] = []
+                for card in cards_data.get('results', []):
+                    conn['cards'].append({
+                        'account_id':   card.get('account_id'),
+                        'display_name': card.get('display_name', card.get('card_network', 'Card')),
+                        'account_type': 'CREDIT_CARD',
+                        'currency':     card.get('currency', 'GBP'),
+                        'provider':     card.get('provider', {}).get('display_name', conn['bank_name']),
+                        'card_network': card.get('card_network', ''),
+                        'card_type':    card.get('card_type', ''),
+                        'partial_card_number': card.get('partial_card_number', ''),
+                    })
+                total_cards += len(conn['cards'])
+            else:
+                conn['cards'] = []
+                if cards_err:
+                    errors.append(f'{conn["bank_name"]}: {cards_err}')
+        except Exception as e:
+            conn['cards'] = []
+            errors.append(f'{conn["bank_name"]}: {str(e)}')
+
+    save_tl_connections(connections)
+    return jsonify({'ok': True, 'total_cards': total_cards, 'errors': errors})
+
+
 @app.route('/api/truelayer/sync', methods=['POST'])
 def tl_sync():
     """Sync transactions and balances from all connected banks."""
@@ -5323,25 +5364,6 @@ def tl_sync():
 
     for conn in connections:
         conn_errors = []
-
-        # Auto-discover cards for connections created before cards support was added
-        if 'cards' not in conn:
-            cards_data, cards_err = tl_get(conn, '/data/v1/cards')
-            if cards_data:
-                conn['cards'] = []
-                for card in cards_data.get('results', []):
-                    conn['cards'].append({
-                        'account_id':   card.get('account_id'),
-                        'display_name': card.get('display_name', card.get('card_network', 'Card')),
-                        'account_type': 'CREDIT_CARD',
-                        'currency':     card.get('currency', 'GBP'),
-                        'provider':     card.get('provider', {}).get('display_name', conn['bank_name']),
-                        'card_network': card.get('card_network', ''),
-                        'card_type':    card.get('card_type', ''),
-                        'partial_card_number': card.get('partial_card_number', ''),
-                    })
-            else:
-                conn['cards'] = []
 
         for acct in conn.get('accounts', []):
             acct_id   = acct['account_id']
@@ -5426,89 +5448,92 @@ def tl_sync():
                 conn_errors.append(f'{acct_name} transactions: {txn_err}')
 
         # ── Credit Cards (TrueLayer /data/v1/cards) ──────────────────────
-        for card in conn.get('cards', []):
-            card_id   = card['account_id']
-            currency  = card.get('currency', 'GBP')
-            card_name = card.get('display_name', conn['bank_name'])
+        try:
+            for card in conn.get('cards', []):
+                card_id   = card['account_id']
+                currency  = card.get('currency', 'GBP')
+                card_name = card.get('display_name', conn['bank_name'])
 
-            # Ensure card account exists locally
-            local_card_id = f"tl_{card_id}"
-            existing_acct_ids = [a['id'] for a in data.get('accounts', [])]
-            if local_card_id not in existing_acct_ids:
-                data.setdefault('accounts', []).append({
-                    'id':               local_card_id,
-                    'name':             f"{card_name} ({conn['bank_name']})",
-                    'bank':             conn['bank_name'],
-                    'currency':         currency,
-                    'account_type':     'credit',
-                    'tl_account_id':    card_id,
-                    'tl_connection_id': conn['id'],
-                    'card_network':     card.get('card_network', ''),
-                    'card_type':        card.get('card_type', ''),
-                })
+                # Ensure card account exists locally
+                local_card_id = f"tl_{card_id}"
+                existing_acct_ids = [a['id'] for a in data.get('accounts', [])]
+                if local_card_id not in existing_acct_ids:
+                    data.setdefault('accounts', []).append({
+                        'id':               local_card_id,
+                        'name':             f"{card_name} ({conn['bank_name']})",
+                        'bank':             conn['bank_name'],
+                        'currency':         currency,
+                        'account_type':     'credit',
+                        'tl_account_id':    card_id,
+                        'tl_connection_id': conn['id'],
+                        'card_network':     card.get('card_network', ''),
+                        'card_type':        card.get('card_type', ''),
+                    })
 
-            # Fetch card balance
-            bal_data, bal_err = tl_get(conn, f'/data/v1/cards/{card_id}/balance')
-            if bal_data:
-                bal_result = bal_data.get('results', [{}])[0]
-                balance   = bal_result.get('current', 0)
-                available = bal_result.get('available', 0)
-                limit_amt = bal_result.get('credit_limit', 0)
-                synced_accounts.append({
-                    'name':         card_name,
-                    'bank':         conn['bank_name'],
-                    'balance':      balance,
-                    'available':    available,
-                    'credit_limit': limit_amt,
-                    'currency':     currency,
-                    'is_credit':    True,
-                })
-                for a in data.get('accounts', []):
-                    if a.get('id') == local_card_id:
-                        a['balance']      = round(balance, 2)
-                        a['available']    = round(available, 2)
-                        a['credit_limit'] = round(limit_amt, 2)
-                        break
-            elif bal_err:
-                conn_errors.append(f'{card_name} balance: {bal_err}')
+                # Fetch card balance
+                bal_data, bal_err = tl_get(conn, f'/data/v1/cards/{card_id}/balance')
+                if bal_data:
+                    bal_result = bal_data.get('results', [{}])[0]
+                    balance   = bal_result.get('current', 0)
+                    available = bal_result.get('available', 0)
+                    limit_amt = bal_result.get('credit_limit', 0)
+                    synced_accounts.append({
+                        'name':         card_name,
+                        'bank':         conn['bank_name'],
+                        'balance':      balance,
+                        'available':    available,
+                        'credit_limit': limit_amt,
+                        'currency':     currency,
+                        'is_credit':    True,
+                    })
+                    for a in data.get('accounts', []):
+                        if a.get('id') == local_card_id:
+                            a['balance']      = round(balance, 2)
+                            a['available']    = round(available, 2)
+                            a['credit_limit'] = round(limit_amt, 2)
+                            break
+                elif bal_err:
+                    conn_errors.append(f'{card_name} balance: {bal_err}')
 
-            # Fetch card transactions
-            txn_data, txn_err = tl_get(conn, f'/data/v1/cards/{card_id}/transactions?from={since}')
-            if txn_data:
-                existing_refs = {t.get('tl_transaction_id') for t in data['transactions'] if t.get('tl_transaction_id')}
+                # Fetch card transactions
+                txn_data, txn_err = tl_get(conn, f'/data/v1/cards/{card_id}/transactions?from={since}')
+                if txn_data:
+                    existing_refs = {t.get('tl_transaction_id') for t in data['transactions'] if t.get('tl_transaction_id')}
 
-                for txn in txn_data.get('results', []):
-                    tl_id = txn.get('transaction_id')
-                    if tl_id in existing_refs:
-                        total_skipped += 1
-                        continue
+                    for txn in txn_data.get('results', []):
+                        tl_id = txn.get('transaction_id')
+                        if tl_id in existing_refs:
+                            total_skipped += 1
+                            continue
 
-                    amount    = abs(txn.get('amount', 0))
-                    txn_type  = 'credit' if txn.get('transaction_type', '').upper() == 'CREDIT' else 'debit'
-                    desc      = txn.get('description', txn.get('merchant_name', 'Unknown'))
-                    txn_date  = txn.get('timestamp', today)[:10]
+                        amount    = abs(txn.get('amount', 0))
+                        txn_type  = 'credit' if txn.get('transaction_type', '').upper() == 'CREDIT' else 'debit'
+                        desc      = txn.get('description', txn.get('merchant_name', 'Unknown'))
+                        txn_date  = txn.get('timestamp', today)[:10]
 
-                    category = categorise_with_memory(data, desc)
+                        category = categorise_with_memory(data, desc)
 
-                    new_txn = {
-                        'id':                str(uuid.uuid4()),
-                        'date':              txn_date,
-                        'description':       desc,
-                        'amount':            round(amount, 2),
-                        'type':              txn_type,
-                        'category':          category,
-                        'currency':          currency,
-                        'account_id':        local_card_id,
-                        'bank':              conn['bank_name'],
-                        'notes':             txn.get('merchant_name', ''),
-                        'is_scheduled':      txn_date > today,
-                        'source':            'truelayer',
-                        'tl_transaction_id': tl_id,
-                    }
-                    data['transactions'].append(new_txn)
-                    total_imported += 1
-            elif txn_err:
-                conn_errors.append(f'{card_name} transactions: {txn_err}')
+                        new_txn = {
+                            'id':                str(uuid.uuid4()),
+                            'date':              txn_date,
+                            'description':       desc,
+                            'amount':            round(amount, 2),
+                            'type':              txn_type,
+                            'category':          category,
+                            'currency':          currency,
+                            'account_id':        local_card_id,
+                            'bank':              conn['bank_name'],
+                            'notes':             txn.get('merchant_name', ''),
+                            'is_scheduled':      txn_date > today,
+                            'source':            'truelayer',
+                            'tl_transaction_id': tl_id,
+                        }
+                        data['transactions'].append(new_txn)
+                        total_imported += 1
+                elif txn_err:
+                    conn_errors.append(f'{card_name} transactions: {txn_err}')
+        except Exception as e:
+            conn_errors.append(f'Cards sync error: {str(e)}')
 
         if conn_errors:
             errors.extend(conn_errors)
