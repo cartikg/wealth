@@ -1069,6 +1069,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <div class="chip" data-filter="type" data-val="debit" onclick="setFilter('type','debit',this)">💸 Outgoing</div>
         <div class="chip" data-filter="type" data-val="credit" onclick="setFilter('type','credit',this)">💰 Incoming</div>
         <div class="chip" data-filter="type" data-val="future" onclick="setFilter('type','future',this)">⏰ Scheduled</div>
+        <div class="chip" data-filter="type" data-val="excluded" onclick="setFilter('type','excluded',this)">🚫 Excluded</div>
         <div class="chip-sep"></div>
         <!-- Account filter -->
         <select class="form-select" id="filter-account" onchange="applyFilters()" style="width:160px;padding:6px 10px;font-size:12px">
@@ -1083,6 +1084,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
             <option value="">🗑 Delete txns by account…</option>
           </select>
           <button class="btn btn-danger btn-sm" onclick="bulkDeleteByAccount()" style="font-size:11px;padding:4px 10px">Delete</button>
+          <button class="btn btn-ghost btn-sm" onclick="detectInternalTransfers()" title="Auto-detect transfers between your accounts and exclude them">🔄 Detect Transfers</button>
           <button class="btn btn-ghost btn-sm" onclick="openCSVModal()">📂 Import CSV</button>
           <button class="btn btn-ghost btn-sm" onclick="openModal('recurring-modal',null)">🔄 Recurring</button>
           <button class="btn btn-gold btn-sm" onclick="openModal('txn-modal',null)">+ Add Entry</button>
@@ -1127,6 +1129,8 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
           <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="selectAllTxns()">☑ Select All</button>
           <button class="btn btn-ghost btn-sm" style="font-size:11px;display:none" id="txn-deselect-btn" onclick="deselectAllTxns()">☐ Deselect All</button>
           <span style="font-size:12px;color:var(--text3)" id="txn-bulk-count"></span>
+          <button class="btn btn-ghost btn-sm" id="txn-bulk-exclude-btn" style="display:none;color:var(--gold)" onclick="bulkExcludeTxns(true)">🚫 Exclude Selected</button>
+          <button class="btn btn-ghost btn-sm" id="txn-bulk-include-btn" style="display:none;color:var(--teal)" onclick="bulkExcludeTxns(false)">✅ Include Selected</button>
           <button class="btn btn-ghost btn-sm" id="txn-bulk-delete-btn" style="display:none;color:var(--rose)" onclick="bulkDeleteTxns()">🗑 Delete Selected</button>
         </div>
         <div class="txn-table-wrap">
@@ -3124,7 +3128,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
     </div>
     <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">Description</label>
-      <input class="form-input" id="txn-desc" type="text" placeholder="e.g. Tesco groceries, Salary, Netflix..." oninput="debounceCategorySuggest()">
+      <input class="form-input" id="txn-desc" type="text" placeholder="e.g. Tesco groceries, Salary, Netflix..." oninput="debounceCategorySuggest();detectTransferExclusion()">
       <div id="txn-cat-suggest" style="display:none;margin-top:6px;font-size:11px;color:var(--teal);cursor:pointer" onclick="applyCategorySuggestion()">
         <span style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);padding:2px 8px;border-radius:12px">
           💡 Suggested: <strong id="txn-cat-suggest-name"></strong>
@@ -3156,6 +3160,15 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         <input class="form-input" id="txn-notes" type="text" placeholder="Extra details...">
       </div>
     </div>
+    <!-- Exclude from analytics toggle -->
+    <div id="txn-exclude-section" style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text2)">
+        <input type="checkbox" id="txn-excluded" style="accent-color:var(--rose);cursor:pointer" onchange="updateExcludeHint()">
+        <span>Exclude from analytics</span>
+      </label>
+      <span id="txn-exclude-hint" style="font-size:10px;color:var(--text3);display:none">Won't count in spending, forecast, or budgets</span>
+      <span id="txn-exclude-auto" style="font-size:10px;color:var(--gold);display:none;cursor:pointer" onclick="document.getElementById('txn-excluded').checked=true;updateExcludeHint()"></span>
+    </div>
     <!-- Split Categories -->
     <div id="txn-split-section" style="margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -3182,8 +3195,12 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
         ondragover="event.preventDefault();this.style.borderColor='var(--gold)'"
         ondragleave="this.style.borderColor='var(--border2)'"
         ondrop="event.preventDefault();this.style.borderColor='var(--border2)';handleTxnReceiptDrop(event)">
-        <input type="file" id="txn-receipt-input" accept="image/*" style="display:none" onchange="handleTxnReceiptSelect(this)">
-        <div id="txn-receipt-placeholder" style="font-size:12px;color:var(--text3)">📷 Drop receipt image here or click to scan</div>
+        <input type="file" id="txn-receipt-input" accept="image/*" capture="environment" style="display:none" onchange="handleTxnReceiptSelect(this)">
+        <div id="txn-receipt-placeholder" style="font-size:13px;color:var(--text3)">
+          <div style="font-size:24px;margin-bottom:4px">📷</div>
+          <div>Tap to scan receipt or drop image here</div>
+          <div style="font-size:11px;margin-top:4px;color:var(--text3);opacity:0.7">Camera or photo library</div>
+        </div>
         <div id="txn-receipt-scanning" style="display:none;font-size:12px;color:var(--gold)"><span class="spinner"></span> Scanning receipt...</div>
       </div>
       <!-- Receipt preview after scan -->
@@ -3965,7 +3982,8 @@ function applyFilters() {
       if(!t.date.startsWith(monthVal)) return false;
     }
     if(filters.type === 'future' && !t.is_future) return false;
-    if(filters.type !== 'all' && filters.type !== 'future' && t.type !== filters.type) return false;
+    if(filters.type === 'excluded' && !t.excluded) return false;
+    if(filters.type !== 'all' && filters.type !== 'future' && filters.type !== 'excluded' && t.type !== filters.type) return false;
     if(filters.account && t.account_id !== filters.account) return false;
     if(filters.category && t.category !== filters.category) return false;
     if(filters.search) {
@@ -3987,11 +4005,12 @@ function renderTransactions(txns) {
   const accMap = {};
   (D.accounts||[]).forEach(a=>accMap[a.id]=maskAccount(a.name));
 
-  // Summary pills — exclude mortgage transactions from spending totals
-  const nonMortDebits = txns.filter(t=>t.type==='debit'&&!t.is_future&&!t.is_mortgage_txn);
+  // Summary pills — exclude mortgage + excluded transactions from spending totals
+  const nonMortDebits = txns.filter(t=>t.type==='debit'&&!t.is_future&&!t.is_mortgage_txn&&!t.excluded);
   const mortDebits = txns.filter(t=>t.is_mortgage_txn&&!t.is_future);
+  const excludedTxns = txns.filter(t=>t.excluded&&!t.is_future);
   const debits = txns.filter(t=>t.type==='debit'&&!t.is_future);
-  const credits = txns.filter(t=>t.type==='credit'&&!t.is_future);
+  const credits = txns.filter(t=>t.type==='credit'&&!t.is_future&&!t.excluded);
   const future = txns.filter(t=>t.is_future);
   const totalOut = nonMortDebits.reduce((s,t)=>s+t.amount_gbp,0);
   const totalMort = mortDebits.reduce((s,t)=>s+t.amount_gbp,0);
@@ -4027,11 +4046,13 @@ function renderTransactions(txns) {
                     `£${(t.amount||0).toFixed(2)}`;
     const futureCls = t.is_future ? 'future-row' : '';
     const mortBadge = t.is_mortgage_txn ? `<span style="font-size:9px;background:rgba(139,92,246,0.12);color:#8B5CF6;padding:1px 5px;border-radius:3px;margin-left:4px">MORTGAGE TAB</span>` : '';
-    return `<tr class="${futureCls}" style="${t.is_mortgage_txn?'opacity:0.5':''}">
+    const exclBadge = t.excluded ? `<span style="font-size:9px;background:rgba(239,68,68,0.12);color:#EF4444;padding:1px 5px;border-radius:3px;margin-left:4px">EXCLUDED</span>` : '';
+    const rowOpacity = t.is_mortgage_txn ? 'opacity:0.5' : t.excluded ? 'opacity:0.45' : '';
+    return `<tr class="${futureCls}" style="${rowOpacity}">
       <td style="padding:8px 4px 8px 14px;width:28px"><input type="checkbox" class="txn-cb" data-id="${t.id}" style="accent-color:var(--gold);cursor:pointer" onchange="toggleTxnSelect('${t.id}',this.checked)"></td>
       <td style="color:var(--text3);font-size:12px;white-space:nowrap">${t.date||'—'}</td>
       <td>
-        <div style="font-weight:500">${t.description||'—'}${mortBadge}${t.receipt_id?`<span onclick="toggleReceiptItems('${t.id}',event)" style="cursor:pointer;margin-left:4px;font-size:12px;opacity:0.6" title="Has receipt — click to expand">📎</span>`:''}</div>
+        <div style="font-weight:500">${t.description||'—'}${mortBadge}${exclBadge}${t.receipt_id?`<span onclick="toggleReceiptItems('${t.id}',event)" style="cursor:pointer;margin-left:4px;font-size:12px;opacity:0.6" title="Has receipt — click to expand">📎</span>`:''}</div>
         ${t.notes?`<div style="font-size:11px;color:var(--text3)">${t.notes}</div>`:''}
       </td>
       <td>${t.splits&&t.splits.length>0?t.splits.slice(0,2).map(s=>`<span class="cat-tag" style="margin-right:2px;font-size:10px">${s.category} £${s.amount.toFixed(0)}</span>`).join('')+(t.splits.length>2?`<span style="font-size:10px;color:var(--text3)">+${t.splits.length-2}</span>`:''):`<span class="cat-tag">${t.category||'Other'}</span>`}</td>
@@ -4044,6 +4065,7 @@ function renderTransactions(txns) {
         </span>
       </td>
       <td style="white-space:nowrap">
+        <button class="action-btn" onclick="toggleExcludeTxn('${t.id}',${!t.excluded})" title="${t.excluded?'Include in analytics':'Exclude from analytics'}" style="font-size:10px">${t.excluded?'✅':'🚫'}</button>
         <button class="action-btn edit" onclick="editTxn('${t.id}')">✏</button>
         <button class="action-btn" onclick="deleteTxn('${t.id}')">✕</button>
       </td>
@@ -7384,9 +7406,13 @@ function updateTxnBulkUI() {
   const btn    = document.getElementById('txn-bulk-delete-btn');
   const count  = document.getElementById('txn-bulk-count');
   const desBtn = document.getElementById('txn-deselect-btn');
+  const exclBtn = document.getElementById('txn-bulk-exclude-btn');
+  const inclBtn = document.getElementById('txn-bulk-include-btn');
   const n = txnSelected.size;
   if (btn)    btn.style.display    = n > 0 ? '' : 'none';
   if (desBtn) desBtn.style.display = n > 0 ? '' : 'none';
+  if (exclBtn) exclBtn.style.display = n > 0 ? '' : 'none';
+  if (inclBtn) inclBtn.style.display = n > 0 ? '' : 'none';
   if (count)  count.textContent    = n > 0 ? `${n} selected` : '';
 }
 
@@ -7427,6 +7453,20 @@ async function bulkDeleteTxns() {
   txnSelected.clear();
   updateTxnBulkUI();
   toast(`${ids.length} transaction(s) deleted ✓`);
+  await load();
+}
+
+async function bulkExcludeTxns(excluded) {
+  if (!txnSelected.size) return;
+  const ids = [...txnSelected];
+  await fetch('/api/transactions/bulk-exclude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, excluded })
+  });
+  txnSelected.clear();
+  updateTxnBulkUI();
+  toast(`${ids.length} transaction(s) ${excluded ? 'excluded from' : 'included in'} analytics ✓`);
   await load();
 }
 
@@ -7777,6 +7817,10 @@ function openModal(id, data) {
     setType('debit');
     checkFutureHint();
     document.getElementById('txn-date').addEventListener('change', checkFutureHint);
+    // Reset exclude checkbox
+    document.getElementById('txn-excluded').checked = false;
+    document.getElementById('txn-exclude-hint').style.display = 'none';
+    document.getElementById('txn-exclude-auto').style.display = 'none';
     // Reset receipt and split state for new transaction
     clearTxnReceipt();
     txnReceiptData = null;
@@ -7820,7 +7864,11 @@ function editTxn(id) {
   document.getElementById('txn-category').value = t.category || 'Other';
   setType(t.type || 'debit');
   checkFutureHint();
-  
+  // Load excluded state
+  document.getElementById('txn-excluded').checked = !!t.excluded;
+  updateExcludeHint();
+  document.getElementById('txn-exclude-auto').style.display = 'none';
+
   // Show recurring indicator if this transaction is from a recurring rule
   const recurBanner = document.getElementById('txn-recurring-banner');
   if (recurBanner) {
@@ -7858,6 +7906,31 @@ function editTxn(id) {
   if (t.splits && t.splits.length > 0) {
     splitRows = t.splits.map(s => ({...s}));
     toggleSplitMode();
+  }
+}
+
+// ── Exclude from analytics ──────────────────────────────────────────────────
+function updateExcludeHint() {
+  const cb = document.getElementById('txn-excluded');
+  const hint = document.getElementById('txn-exclude-hint');
+  hint.style.display = cb.checked ? '' : 'none';
+}
+function detectTransferExclusion() {
+  // Auto-suggest exclusion if description looks like internal transfer between user's accounts
+  if (!D || !D.accounts || D.accounts.length < 2) return;
+  const desc = (document.getElementById('txn-desc').value || '').toLowerCase();
+  const accNames = D.accounts.map(a => (a.name||'').toLowerCase());
+  const bankNames = D.accounts.map(a => (a.bank||'').toLowerCase());
+  const allNames = [...new Set([...accNames, ...bankNames].filter(n=>n))];
+  const transferKeywords = ['transfer', 'tfr', 'moved', 'move to', 'move from', 'internal', 'credit card payment', 'card payment', 'pay off', 'pay credit'];
+  const isTransfer = transferKeywords.some(k => desc.includes(k));
+  const mentionsAccount = allNames.some(n => n && desc.includes(n));
+  const autoHint = document.getElementById('txn-exclude-auto');
+  if (isTransfer || mentionsAccount) {
+    autoHint.textContent = '💡 Looks like an internal transfer — click to exclude';
+    autoHint.style.display = '';
+  } else {
+    autoHint.style.display = 'none';
   }
 }
 
@@ -8033,6 +8106,7 @@ async function saveTxn() {
     currency: document.getElementById('txn-currency').value,
     notes: document.getElementById('txn-notes').value,
     type: editingTxnType,
+    excluded: document.getElementById('txn-excluded').checked,
   };
   // Add splits if in split mode
   if (splitMode && splitRows.length > 0) {
@@ -8464,6 +8538,33 @@ async function bulkDeleteByAccount() {
   toast(`Deleted ${d.deleted} transactions from ${name}`);
   sel.value = '';
   await load();
+}
+
+// ── Detect Internal Transfers ─────────────────────────────────────────────────
+async function detectInternalTransfers() {
+  toast('Scanning for internal transfers...', 'info');
+  try {
+    const r = await fetch('/api/transactions/detect-transfers', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const d = await r.json();
+    if (d.detected > 0) {
+      toast(`Found and excluded ${d.detected} internal transfers`);
+      await load();
+    } else {
+      toast('No internal transfers detected', 'info');
+    }
+  } catch(e) {
+    toast('Failed to detect transfers', 'error');
+  }
+}
+
+async function toggleExcludeTxn(id, excluded) {
+  await fetch('/api/transactions/bulk-exclude', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ids:[id], excluded: excluded})
+  });
+  toast(excluded ? 'Transaction excluded from analytics' : 'Transaction included in analytics');
+  load();
 }
 
 // ── CSV ───────────────────────────────────────────────────────────────────────

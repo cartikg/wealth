@@ -946,7 +946,7 @@ def get_all_data():
     
     recent_spend = sum(t['amount_gbp'] for t in transactions
         if t.get('type') == 'debit' and cutoff_30 <= t.get('date', '') <= today
-        and not t.get('is_mortgage_txn'))
+        and not t.get('is_mortgage_txn') and not t.get('excluded'))
 
     monthly_income = data.get('income', 0)
     avg_monthly_spend = recent_spend if recent_spend > 0 else data.get('monthly_fixed_expenses', 0)
@@ -955,7 +955,7 @@ def get_all_data():
     monthly_mortgage_pmts = sum(_calc_monthly_payment(m) for m in data.get('mortgages', []))
     monthly_debt_pmts = sum(float(d.get('minimum_payment', 0)) for d in data.get('debts_detailed', []))
 
-    future_txns = [t for t in transactions if t.get('is_future')]
+    future_txns = [t for t in transactions if t.get('is_future') and not t.get('excluded')]
     forecast = []
     balance = bank_balance
     # Track mortgage balance amortisation over forecast period
@@ -1015,7 +1015,7 @@ def get_all_data():
 
     categories = {}
     for t in transactions:
-        if t.get('type') == 'debit' and not t.get('is_future'):
+        if t.get('type') == 'debit' and not t.get('is_future') and not t.get('excluded'):
             # Skip mortgage transactions when tracked in Mortgage tab
             if has_structured_mortgages and t.get('category') in mortgage_categories:
                 continue
@@ -1028,7 +1028,7 @@ def get_all_data():
         monthly_trend[dt.strftime('%b %Y')] = {'income': 0, 'spend': 0, 'key': dt.strftime('%Y-%m')}
 
     for t in transactions:
-        if t.get('is_future'):
+        if t.get('is_future') or t.get('excluded'):
             continue
         try:
             dt = datetime.strptime(t.get('date', '')[:7], '%Y-%m')
@@ -1178,6 +1178,7 @@ def add_transaction():
         'bank': body.get('bank', '') or (data.get('accounts', [{}])[0].get('bank', '') if data.get('accounts') and not body.get('account_id') else ''),
         'notes': body.get('notes', ''),
         'is_scheduled': txn_date > today,
+        'excluded': bool(body.get('excluded', False)),
         'source': 'manual'
     }
     # Link receipt if provided
@@ -1213,6 +1214,8 @@ def update_transaction(txn_id):
         if t.get('id') == txn_id:
             updated = {**t, **body}
             updated['is_scheduled'] = updated.get('date', today) > today
+            if 'excluded' in body:
+                updated['excluded'] = bool(body['excluded'])
             # Validate splits if provided
             if 'splits' in body and body['splits']:
                 splits = body['splits']
@@ -1255,6 +1258,84 @@ def bulk_delete_transactions():
     data['transactions'] = [] if delete_all else [t for t in txns if t.get('id') not in ids]
     save_data(data)
     return jsonify({'ok': True, 'deleted': before - len(data['transactions'])})
+
+@app.route('/api/transactions/bulk-exclude', methods=['POST'])
+def bulk_exclude_transactions():
+    """Set excluded flag on multiple transactions by ID."""
+    data = load_data()
+    body = request.json or {}
+    ids = set(body.get('ids', []))
+    excluded = bool(body.get('excluded', True))
+    count = 0
+    for t in data['transactions']:
+        if t.get('id') in ids:
+            t['excluded'] = excluded
+            count += 1
+    save_data(data)
+    return jsonify({'ok': True, 'updated': count})
+
+@app.route('/api/transactions/detect-transfers', methods=['POST'])
+def detect_internal_transfers():
+    """Auto-detect internal transfers between user's own accounts and mark as excluded."""
+    data = load_data()
+    accounts = data.get('accounts', [])
+    if len(accounts) < 2:
+        return jsonify({'ok': True, 'detected': 0, 'message': 'Need at least 2 accounts'})
+
+    account_ids = {a['id'] for a in accounts}
+    account_names = {(a.get('name', '') or '').lower() for a in accounts} - {''}
+    bank_names = {(a.get('bank', '') or '').lower() for a in accounts} - {''}
+    all_names = account_names | bank_names
+
+    transfer_keywords = ['transfer', 'tfr', 'internal', 'move', 'credit card payment',
+                         'card payment', 'pay off card', 'cc payment', 'payment to card',
+                         'direct debit', 'payment to']
+
+    detected_ids = []
+    for t in data['transactions']:
+        if t.get('excluded'):
+            continue  # already excluded
+        desc = (t.get('description', '') or '').lower()
+        # Check if description contains transfer keywords AND mentions one of user's accounts/banks
+        has_keyword = any(k in desc for k in transfer_keywords)
+        mentions_account = any(n in desc for n in all_names if n)
+        if has_keyword and mentions_account:
+            detected_ids.append(t['id'])
+
+    # Also detect matching pairs: same amount, same date, one debit + one credit across different accounts
+    from collections import defaultdict
+    by_date_amount = defaultdict(list)
+    for t in data['transactions']:
+        if t.get('excluded') or t.get('is_scheduled'):
+            continue
+        key = f"{t.get('date', '')}|{round(t.get('amount', 0), 2)}"
+        by_date_amount[key].append(t)
+    for key, txn_group in by_date_amount.items():
+        if len(txn_group) < 2:
+            continue
+        debits = [t for t in txn_group if t.get('type') == 'debit']
+        credits = [t for t in txn_group if t.get('type') == 'credit']
+        if debits and credits:
+            for d in debits:
+                for c in credits:
+                    d_acc = d.get('account_id', '')
+                    c_acc = c.get('account_id', '')
+                    if d_acc and c_acc and d_acc != c_acc and d_acc in account_ids and c_acc in account_ids:
+                        if d['id'] not in detected_ids:
+                            detected_ids.append(d['id'])
+                        if c['id'] not in detected_ids:
+                            detected_ids.append(c['id'])
+
+    # Mark detected as excluded
+    count = 0
+    for t in data['transactions']:
+        if t['id'] in detected_ids:
+            t['excluded'] = True
+            count += 1
+    if count > 0:
+        save_data(data)
+
+    return jsonify({'ok': True, 'detected': count, 'ids': detected_ids})
 
 # ─── Category Memory API ─────────────────────────────────────────────────────
 
@@ -2037,7 +2118,7 @@ def spending_analytics():
         tx['is_future'] = tx.get('date', '') > today
         # Skip mortgage-category transactions when mortgages are tracked in Mortgage tab
         tx['is_mortgage_txn'] = has_structured_mortgages and tx.get('category') in mortgage_categories and tx.get('type') == 'debit'
-        if not tx['is_future']:
+        if not tx['is_future'] and not tx.get('excluded'):
             transactions.append(tx)
     
     # Group by month — exclude mortgage transactions from spend analysis if tracked structurally
@@ -2226,10 +2307,12 @@ def api_budget_summary():
     days_in_month = (datetime(now.year, now.month % 12 + 1, 1) - timedelta(days=1)).day if now.month < 12 else 31
     days_left = days_in_month - now.day + 1
 
-    # Sum spending per category this month (split-aware)
+    # Sum spending per category this month (split-aware) — skip excluded transactions
     cat_spend = {}
     for t in data.get('transactions', []):
         if t.get('type') != 'debit':
+            continue
+        if t.get('excluded'):
             continue
         if t.get('date', '')[:7] != current_month:
             continue
@@ -2368,6 +2451,8 @@ def api_financial_health():
     monthly_spend = {}
     monthly_cat_spend = {}
     for t in data.get('transactions', []):
+        if t.get('excluded'):
+            continue
         m = t.get('date', '')[:7]
         if m not in months:
             continue
@@ -2535,6 +2620,8 @@ def api_spending_behavior():
         if t.get('type') != 'debit':
             continue
         if t.get('date', '') > today_str:
+            continue
+        if t.get('excluded'):
             continue
         m = t.get('date', '')[:7]
         if m not in months_6:
