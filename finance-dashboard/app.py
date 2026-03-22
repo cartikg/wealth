@@ -343,11 +343,7 @@ def migrate_data(data):
 def default_data():
     return {
         'transactions': [],
-        'accounts': [
-            {'id': 'uk-main', 'name': 'UK Current', 'currency': 'GBP', 'bank': 'Monzo', 'account_type': 'current'},
-            {'id': 'uk-savings', 'name': 'UK Savings', 'currency': 'GBP', 'bank': 'Savings', 'account_type': 'savings'},
-            {'id': 'india-main', 'name': 'India Account', 'currency': 'INR', 'bank': 'HDFC', 'account_type': 'current'},
-        ],
+        'accounts': [],
         'investments': {'isa': [], 'crypto': [], 'rsu': [], 'stocks': [], 'pension': [], 'custom': []},
         'monthly_contributions': {'isa': 0, 'pension': 0, 'crypto': 0, 'stocks': 0, 'savings': 0},
         'income': 0,
@@ -1461,6 +1457,8 @@ def update_account(acc_id):
 def delete_account(acc_id):
     data = load_data()
     data['accounts'] = [a for a in data.get('accounts', []) if a.get('id') != acc_id]
+    # Cascade: remove orphaned transactions for this account
+    data['transactions'] = [t for t in data.get('transactions', []) if t.get('account_id') != acc_id]
     save_data(data)
     return jsonify({'ok': True})
 
@@ -1839,6 +1837,248 @@ Return ONLY a JSON array."""}]
     data['transactions'].extend(new_txns)
     save_data(data)
     return jsonify({'added': len(new_txns), 'total': len(data['transactions']), 'source': 'emma'})
+
+
+# ─── Emma Google Sheet Import ─────────────────────────────────────────────────
+
+EMMA_CAT_MAP = {
+    'groceries': 'Food & Dining',
+    'shopping': 'Shopping',
+    'eating out': 'Food & Dining',
+    'transport': 'Transport',
+    'bills': 'Bills & Utilities',
+    'mobile & broadband': 'Bills & Utilities',
+    'insurance': 'Bills & Utilities',
+    'income': 'Salary',
+    'cyderes': 'Salary',
+    'holidays': 'Travel',
+    'general': 'Other',
+    'housing': 'Rent/Mortgage',
+    'investments': 'Savings',
+    'excluded': 'EXCLUDED',
+    'transfer': 'TRANSFER',
+    'amazon': 'Shopping',
+    'india': 'Other',
+    'garden': 'Other',
+    'waste': 'Bills & Utilities',
+    'swaroopa': 'Other',
+    'restaurants': 'Food & Dining',
+    'food': 'Food & Dining',
+    'clothing': 'Shopping',
+    'entertainment': 'Entertainment',
+    'subscriptions': 'Subscriptions',
+    'utilities': 'Bills & Utilities',
+    'health': 'Health & Fitness',
+    'fitness': 'Health & Fitness',
+    'rent': 'Rent/Mortgage',
+    'mortgage': 'Rent/Mortgage',
+    'salary': 'Salary',
+    'wages': 'Salary',
+    'education': 'Education',
+    'personal care': 'Personal Care',
+    'gifts': 'Gifts & Donations',
+    'charity': 'Gifts & Donations',
+    'cash': 'Other',
+    'atm': 'Other',
+}
+
+@app.route('/api/import/emma-sheet', methods=['POST'])
+def import_emma_sheet():
+    """Import transactions from a published Emma Google Sheet."""
+    import csv
+    import io
+    import re
+
+    body = request.json or {}
+    sheet_url = (body.get('url') or '').strip()
+    if not sheet_url:
+        return jsonify({'error': 'No URL provided'}), 400
+
+    # Build CSV export URL from various Google Sheets URL formats
+    csv_url = sheet_url
+    if 'docs.google.com/spreadsheets' in sheet_url:
+        # Already a published CSV URL
+        if 'pub?' in sheet_url and 'output=csv' in sheet_url:
+            csv_url = sheet_url
+        elif 'pub?' in sheet_url:
+            # Published but wrong format — switch to CSV
+            csv_url = re.sub(r'output=\w+', 'output=csv', sheet_url)
+            if 'output=csv' not in csv_url:
+                csv_url += '&output=csv' if '?' in csv_url else '?output=csv'
+        else:
+            # Regular edit URL — try to build published CSV URL
+            m = re.search(r'/d/([a-zA-Z0-9_-]+)', sheet_url)
+            if m:
+                sheet_id = m.group(1)
+                # Extract gid if present
+                gid_match = re.search(r'gid=(\d+)', sheet_url)
+                gid = gid_match.group(1) if gid_match else '0'
+                csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+
+    # Fetch CSV
+    try:
+        resp = requests.get(csv_url, timeout=30)
+        resp.raise_for_status()
+        content = resp.text
+    except Exception as e:
+        return jsonify({'error': f'Failed to fetch sheet: {str(e)}. Make sure the sheet is published (File → Share → Publish to web → CSV).'}), 400
+
+    if not content.strip() or '<html' in content[:200].lower():
+        return jsonify({'error': 'Got HTML instead of CSV. Please publish the sheet: File → Share → Publish to web → CSV format.'}), 400
+
+    # Parse CSV
+    reader = csv.DictReader(io.StringIO(content))
+    rows = list(reader)
+    if not rows:
+        return jsonify({'error': 'No data rows found in CSV'}), 400
+
+    data = load_data()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # Build set of existing Emma IDs for deduplication
+    existing_emma_ids = {t.get('emma_id') for t in data['transactions'] if t.get('emma_id')}
+
+    # Track accounts to auto-create
+    existing_accounts = {a['id']: a for a in data.get('accounts', [])}
+    accounts_created = 0
+
+    imported = 0
+    skipped = 0
+    errors_count = 0
+
+    for row in rows:
+        try:
+            # Get Emma transaction ID
+            emma_id = (row.get('ID') or '').strip()
+            if emma_id and emma_id in existing_emma_ids:
+                skipped += 1
+                continue
+
+            # Parse date (M/D/YYYY format from Emma)
+            raw_date = (row.get('Date') or '').strip()
+            if not raw_date:
+                errors_count += 1
+                continue
+            txn_date = ''
+            for fmt in ['%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%y', '%d-%m-%Y']:
+                try:
+                    txn_date = datetime.strptime(raw_date, fmt).strftime('%Y-%m-%d')
+                    break
+                except ValueError:
+                    continue
+            if not txn_date:
+                errors_count += 1
+                continue
+
+            # Parse amount
+            raw_amount = (row.get('Amount') or '0').strip().replace(',', '').replace('£', '').replace('$', '').replace('€', '')
+            amount = float(raw_amount)
+            txn_type = 'credit' if amount > 0 else 'debit'
+            amount = abs(amount)
+            if amount == 0:
+                continue
+
+            # Category mapping
+            emma_category = (row.get('Category') or 'Other').strip()
+            emma_cat_lower = emma_category.lower()
+            mapped_cat = EMMA_CAT_MAP.get(emma_cat_lower, None)
+
+            excluded = False
+            if mapped_cat == 'EXCLUDED' or mapped_cat == 'TRANSFER':
+                excluded = True
+                category = 'Transfer' if mapped_cat == 'TRANSFER' else 'Other'
+            elif mapped_cat:
+                category = mapped_cat
+            else:
+                # Unmapped — use Emma category as-is, auto-create user_category
+                category = emma_category
+                # Ensure user_category exists
+                user_cats = data.get('user_categories', [])
+                if not any(uc['name'].lower() == emma_category.lower() for uc in user_cats):
+                    user_cats.append({
+                        'id': f'cat_{len(user_cats):03d}',
+                        'name': emma_category,
+                        'icon': '📦',
+                        'type': 'expense',
+                    })
+                    data['user_categories'] = user_cats
+
+            # Account — auto-create from Bank + Account
+            bank_name = (row.get('Bank') or '').strip()
+            acct_name = (row.get('Account') or '').strip()
+            currency = (row.get('Currency') or 'GBP').strip()
+
+            # Build account ID from bank+account combo
+            acct_key = f"emma_{(bank_name + '_' + acct_name).lower().replace(' ', '_').replace('/', '_')}"
+            if acct_key not in existing_accounts and (bank_name or acct_name):
+                new_acct = {
+                    'id': acct_key,
+                    'name': acct_name or bank_name,
+                    'bank': bank_name or 'Emma',
+                    'currency': currency if currency in ['GBP', 'USD', 'EUR', 'INR'] else 'GBP',
+                    'account_type': 'current',
+                    'source': 'emma',
+                }
+                data.setdefault('accounts', []).append(new_acct)
+                existing_accounts[acct_key] = new_acct
+                accounts_created += 1
+
+            # Description — use Custom Name > Merchant > Counterparty > generic
+            description = (
+                (row.get('Custom Name') or '').strip()
+                or (row.get('Merchant') or '').strip()
+                or (row.get('Counterparty') or '').strip()
+                or f"{emma_category} transaction"
+            )
+
+            notes_parts = []
+            if row.get('Notes', '').strip():
+                notes_parts.append(row['Notes'].strip())
+            if row.get('Additional details', '').strip():
+                notes_parts.append(row['Additional details'].strip())
+            if row.get('Tags', '').strip():
+                notes_parts.append(f"Tags: {row['Tags'].strip()}")
+
+            txn = {
+                'id': str(uuid.uuid4()),
+                'date': txn_date,
+                'description': description,
+                'amount': round(amount, 2),
+                'type': txn_type,
+                'category': category,
+                'currency': currency if currency in ['GBP', 'USD', 'EUR', 'INR'] else 'GBP',
+                'account_id': acct_key if (bank_name or acct_name) else '',
+                'bank': bank_name or 'Emma Import',
+                'notes': ' | '.join(notes_parts),
+                'is_scheduled': txn_date > today,
+                'source': 'emma',
+                'emma_id': emma_id,
+                'emma_category': emma_category,
+                'excluded': excluded,
+            }
+            if row.get('Subcategory', '').strip():
+                txn['emma_subcategory'] = row['Subcategory'].strip()
+            if row.get('Type', '').strip():
+                txn['emma_type'] = row['Type'].strip()
+
+            data['transactions'].append(txn)
+            if emma_id:
+                existing_emma_ids.add(emma_id)
+            imported += 1
+
+        except Exception:
+            errors_count += 1
+            continue
+
+    save_data(data)
+    return jsonify({
+        'ok': True,
+        'imported': imported,
+        'skipped': skipped,
+        'errors': errors_count,
+        'accounts_created': accounts_created,
+        'total_transactions': len(data['transactions']),
+    })
 
 
 @app.route('/api/recurring', methods=['GET'])
@@ -3646,6 +3886,15 @@ Format numbers with £ and commas. Use bullet points sparingly. Keep responses u
 @app.route('/api/clear', methods=['POST'])
 def clear_data():
     save_data(default_data())
+    # Also clear bank connections so disconnected banks don't reappear
+    try:
+        save_tl_connections([])
+    except Exception:
+        pass
+    try:
+        save_plaid_connections([])
+    except Exception:
+        pass
     return jsonify({'ok': True})
 
 # ─── Demo Mode ─────────────────────────────────────────────────────────────────
@@ -4776,7 +5025,19 @@ def tl_sync():
     data = load_data()
     rates = get_exchange_rates()
     today = datetime.now().strftime('%Y-%m-%d')
-    since = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT00:00:00Z')
+
+    # Support since_date param: 'today' = no history, date string, or default 90 days
+    body = request.json or {}
+    since_date = body.get('since_date', '') or request.args.get('since_date', '')
+    if since_date == 'today':
+        since = datetime.now().strftime('%Y-%m-%dT00:00:00Z')
+    elif since_date:
+        try:
+            since = datetime.strptime(since_date[:10], '%Y-%m-%d').strftime('%Y-%m-%dT00:00:00Z')
+        except ValueError:
+            since = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT00:00:00Z')
+    else:
+        since = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%dT00:00:00Z')
 
     total_imported  = 0
     total_skipped   = 0
@@ -5643,6 +5904,18 @@ def plaid_sync():
     data = load_data()
     today = datetime.now().strftime('%Y-%m-%d')
 
+    # Support since_date param: 'today' = skip old txns, date string = skip before that date
+    body = request.json or {}
+    since_date = body.get('since_date', '') or request.args.get('since_date', '')
+    date_filter = None
+    if since_date == 'today':
+        date_filter = today
+    elif since_date:
+        try:
+            date_filter = datetime.strptime(since_date[:10], '%Y-%m-%d').strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+
     total_imported = 0
     total_skipped  = 0
     total_removed  = 0
@@ -5690,6 +5963,12 @@ def plaid_sync():
             for txn in sync_data.get('added', []):
                 pl_id = txn.get('transaction_id')
                 if pl_id in existing_pl_ids:
+                    total_skipped += 1
+                    continue
+
+                # Skip transactions before date_filter (for "sync from today" option)
+                txn_date_raw = txn.get('date', today)
+                if date_filter and txn_date_raw < date_filter:
                     total_skipped += 1
                     continue
 

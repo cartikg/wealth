@@ -1086,6 +1086,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
           <button class="btn btn-danger btn-sm" onclick="bulkDeleteByAccount()" style="font-size:11px;padding:4px 10px">Delete</button>
           <button class="btn btn-ghost btn-sm" onclick="detectInternalTransfers()" title="Auto-detect transfers between your accounts and exclude them">🔄 Detect Transfers</button>
           <button class="btn btn-ghost btn-sm" onclick="openCSVModal()">📂 Import CSV</button>
+          <button class="btn btn-ghost btn-sm" onclick="openModal('emma-modal',null)">📊 Import Emma</button>
           <button class="btn btn-ghost btn-sm" onclick="openModal('recurring-modal',null)">🔄 Recurring</button>
           <button class="btn btn-gold btn-sm" onclick="openModal('txn-modal',null)">+ Add Entry</button>
         </div>
@@ -3262,6 +3263,26 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
   </div>
 </div>
 
+<!-- Emma Import Modal -->
+<div class="modal-overlay" id="emma-modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Import from Emma</div>
+      <button class="modal-close" onclick="closeModal('emma-modal')">✕</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Google Sheet URL</label>
+      <input class="form-input" id="emma-sheet-url" type="url" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vRgE9_NmenPaG5d-J911sxkkxb77LjgeywVZxqwyF4yBZiiq8tQloY9qmR3x4ofSGA7T4lcmqdMAIox/pub?output=csv&gid=1" placeholder="https://docs.google.com/spreadsheets/d/...">
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Publish your Emma sheet: File → Share → Publish to web → CSV</div>
+    </div>
+    <div id="emma-import-result" style="display:none;margin-bottom:12px;padding:12px;border-radius:8px;font-size:13px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('emma-modal')">Cancel</button>
+      <button class="btn btn-gold" id="emma-import-btn" onclick="importEmmaSheet()"><span class="spinner" id="emma-spinner" style="display:none"></span> Import Transactions</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Account Modal -->
 <div class="modal-overlay" id="account-modal-overlay">
   <div class="modal">
@@ -3609,14 +3630,14 @@ async function load() {
   }
 }
 
-function renderAll() {
+async function renderAll() {
   if(!D) return;
   initGlobal();
   initCollapsibleSections();
   applyIdentityMasking();
   initDemoMode();
   loadReceipts();
-  loadBanks();
+  await loadBanks();
   loadSpendingInsights();
   const r = D.exchange_rates || {};
   const rateInr = document.getElementById('rate-inr');
@@ -8599,6 +8620,50 @@ async function uploadCSV() {
   finally { spinner.style.display='none'; }
 }
 
+// ── Emma Import ──────────────────────────────────────────────────────────────
+async function importEmmaSheet() {
+  const url = document.getElementById('emma-sheet-url').value.trim();
+  if (!url) { toast('Please enter a Google Sheet URL', 'error'); return; }
+  const spinner = document.getElementById('emma-spinner');
+  const btn = document.getElementById('emma-import-btn');
+  const result = document.getElementById('emma-import-result');
+  spinner.style.display = '';
+  btn.disabled = true;
+  result.style.display = 'none';
+  toast('Importing Emma transactions...', 'info');
+  try {
+    const r = await fetch('/api/import/emma-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    result.style.display = '';
+    result.style.background = 'var(--surface2)';
+    result.style.color = 'var(--text)';
+    result.innerHTML = `
+      <div style="font-weight:600;color:var(--teal);margin-bottom:6px">✓ Import Complete</div>
+      <div>Imported: <b>${d.imported}</b> transactions</div>
+      ${d.skipped ? `<div>Skipped (duplicates): <b>${d.skipped}</b></div>` : ''}
+      ${d.accounts_created ? `<div>Accounts created: <b>${d.accounts_created}</b></div>` : ''}
+      ${d.errors ? `<div style="color:var(--rose)">Parse errors: <b>${d.errors}</b></div>` : ''}
+      <div style="margin-top:4px;color:var(--text3);font-size:11px">Total transactions: ${d.total_transactions}</div>
+    `;
+    toast(`✓ Imported ${d.imported} Emma transactions`);
+    load();
+  } catch (e) {
+    result.style.display = '';
+    result.style.background = 'rgba(255,77,77,0.1)';
+    result.style.color = 'var(--rose)';
+    result.textContent = 'Error: ' + e.message;
+    toast('Emma import failed: ' + e.message, 'error');
+  } finally {
+    spinner.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+
 // ── Accounts ──────────────────────────────────────────────────────────────────
 async function saveAccount() {
   const body = {
@@ -9151,6 +9216,52 @@ let tlStatus = null;
 let plaidStatus = null;
 let tlSyncedBalances = [];
 
+function showSyncDateChoice(bankName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <div class="modal-title">Import History — ${bankName || 'Bank'}</div>
+        </div>
+        <div style="padding:0 0 8px;color:var(--text2);font-size:13px">
+          How far back should we import transactions?
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+          <button class="btn btn-ghost" style="text-align:left;padding:12px 16px" onclick="this.closest('.modal-overlay').dataset.choice='today'">
+            <div style="font-weight:600">📅 From today only</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Best if you've imported history from Emma or CSV</div>
+          </button>
+          <button class="btn btn-ghost" style="text-align:left;padding:12px 16px" onclick="this.closest('.modal-overlay').dataset.choice='90days'">
+            <div style="font-weight:600">📆 Last 90 days</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Maximum history available from TrueLayer</div>
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+      const choice = overlay.dataset.choice;
+      if (choice) {
+        overlay.remove();
+        resolve(choice === 'today' ? 'today' : null);
+      }
+    });
+    // Also handle button clicks directly
+    overlay.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const choice = overlay.dataset.choice;
+        setTimeout(() => {
+          overlay.remove();
+          resolve(choice === 'today' ? 'today' : null);
+        }, 50);
+      });
+    });
+  });
+}
+
 async function loadBanks() {
   try {
     const [tlR, plaidR] = await Promise.all([
@@ -9219,11 +9330,13 @@ async function tlConnect() {
   const handler = async (e) => {
     if (e.data?.type === 'tl_connected') {
       window.removeEventListener('message', handler);
-      toast(`✓ ${e.data.bank} connected — syncing now...`, 'info');
       popup?.close();
-      await tlSync();
+      // Show sync date choice
+      const sinceDate = await showSyncDateChoice(e.data.bank);
+      toast(`✓ ${e.data.bank} connected — syncing now...`, 'info');
+      await tlSync(sinceDate);
       await loadBanks();
-      load(); // refresh main dashboard
+      await load();
     } else if (e.data?.type === 'tl_error') {
       window.removeEventListener('message', handler);
       toast('Connection failed: ' + e.data.error, 'error');
@@ -9241,14 +9354,15 @@ async function tlConnect() {
   }, 1000);
 }
 
-async function tlSync() {
+async function tlSync(sinceDate) {
   const btn = document.getElementById('tl-sync-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Syncing...'; }
 
   toast('Syncing bank transactions...', 'info');
 
   try {
-    const r = await fetch('/api/truelayer/sync', { method: 'POST' });
+    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sinceDate ? { since_date: sinceDate } : {}) };
+    const r = await fetch('/api/truelayer/sync', fetchOpts);
     const d = await r.json();
 
     const resultEl = document.getElementById('tl-sync-result');
@@ -9325,8 +9439,8 @@ async function tlDisconnect(connectionId) {
   if (!confirm('Disconnect this bank? Imported transactions will remain.')) return;
   await fetch(`/api/truelayer/disconnect/${connectionId}`, { method: 'DELETE' });
   toast('Bank disconnected');
-  loadBanks();
-  load();
+  await loadBanks();
+  await load();
 }
 
 
@@ -9371,10 +9485,11 @@ async function plaidConnect() {
   }
 }
 
-async function plaidSync() {
+async function plaidSync(sinceDate) {
   toast('Syncing Plaid transactions...', 'info');
   try {
-    const r = await fetch('/api/plaid/sync', { method: 'POST' });
+    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sinceDate ? { since_date: sinceDate } : {}) };
+    const r = await fetch('/api/plaid/sync', fetchOpts);
     const d = await r.json();
 
     const resultEl = document.getElementById('tl-sync-result');
@@ -9413,8 +9528,8 @@ async function plaidDisconnect(connectionId) {
   if (!confirm('Disconnect this Plaid bank? Imported transactions will remain.')) return;
   await fetch(`/api/plaid/disconnect/${connectionId}`, { method: 'DELETE' });
   toast('Plaid bank disconnected');
-  loadBanks();
-  load();
+  await loadBanks();
+  await load();
 }
 
 
