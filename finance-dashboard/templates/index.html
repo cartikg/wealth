@@ -1023,9 +1023,83 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
           <div class="chart-wrap-lg" style="margin-top:6px"><canvas id="chart-forecast"></canvas></div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-label" style="margin-bottom:12px">Scheduled Future Transactions</div>
-        <div id="future-txns-list"></div>
+      <!-- Projections Card -->
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="card-label" style="margin-bottom:0">Projections</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="autoDetectProjections()" id="fc-auto-btn">🔍 Auto-Detect</button>
+            <button class="btn btn-gold btn-sm" onclick="openProjectionModal()">+ Add Projection</button>
+          </div>
+        </div>
+        <div id="fc-auto-detect-results" style="display:none;margin-bottom:14px"></div>
+        <div id="fc-projections-list"></div>
+      </div>
+      <!-- Monthly Breakdown -->
+      <div class="card" data-collapse-id="fc-breakdown">
+        <div class="card-header-row" onclick="toggleSection('fc-breakdown')">
+          <div class="card-label" style="margin-bottom:0">Monthly Breakdown</div>
+          <span class="card-chevron" id="cc-fc-breakdown">▸</span>
+        </div>
+        <div class="card-body-collapsible collapsed" id="cb-fc-breakdown">
+          <div id="fc-monthly-breakdown" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Projection Modal -->
+    <div class="modal-overlay" id="projection-modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title" id="projection-modal-title">Add Projection</div>
+          <button class="modal-close" onclick="closeModal('projection-modal')">✕</button>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label">Description</label>
+          <input class="form-input" id="proj-description" placeholder="e.g. Rent, Netflix, Salary">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Amount (£)</label>
+            <input class="form-input" id="proj-amount" type="number" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select class="form-input" id="proj-type">
+              <option value="debit">Expense (outgoing)</option>
+              <option value="credit">Income (incoming)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Frequency</label>
+            <select class="form-input" id="proj-frequency">
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+              <option value="yearly">Yearly</option>
+              <option value="once">One-time</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <select class="form-input" id="proj-category"></select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Start Date</label>
+            <input class="form-input" id="proj-start" type="date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Date <span style="font-size:10px;color:var(--text3)">(optional)</span></label>
+            <input class="form-input" id="proj-end" type="date">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeModal('projection-modal')">Cancel</button>
+          <button class="btn btn-gold" onclick="saveProjection()">Save Projection</button>
+        </div>
       </div>
     </div>
 
@@ -3893,21 +3967,20 @@ function renderNetWorth() {
 function renderForecast() {
   const fc = D.forecast || [];
   const vals = fc.map(f=>f.balance);
-  set('fc-3', fmtGBP(vals[2]), sign(vals[2]));
-  set('fc-6', fmtGBP(vals[5]), sign(vals[5]));
-  set('fc-12', fmtGBP(vals[11]), sign(vals[11]));
+  set('fc-3', fmtGBP(vals[2]||0), sign(vals[2]||0));
+  set('fc-6', fmtGBP(vals[5]||0), sign(vals[5]||0));
+  set('fc-12', fmtGBP(vals[11]||0), sign(vals[11]||0));
 
-  // Build datasets including debt trajectory
+  // Build datasets — now uses projected_in/projected_out
   const datasets = [
     { label:'Cash Balance', data:vals, borderColor:'#3B82F6', backgroundColor:'rgba(59,130,246,0.06)',
       fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#3B82F6', borderWidth:2 },
-    { label:'Scheduled In', data:fc.map(f=>f.scheduled_in), borderColor:'rgba(59,130,246,0.6)',
+    { label:'Projected In', data:fc.map(f=>f.projected_in||f.scheduled_in||0), borderColor:'rgba(34,197,94,0.6)',
       backgroundColor:'transparent', tension:0.4, pointRadius:3, borderWidth:1, borderDash:[4,3] },
-    { label:'Scheduled Out', data:fc.map(f=>f.scheduled_out), borderColor:'rgba(239,68,68,0.6)',
+    { label:'Projected Out', data:fc.map(f=>f.projected_out||f.scheduled_out||0), borderColor:'rgba(239,68,68,0.6)',
       backgroundColor:'transparent', tension:0.4, pointRadius:3, borderWidth:1, borderDash:[4,3] },
   ];
-  
-  // Add debt remaining trajectory if any debt exists
+
   const hasDebts = fc.some(f => (f.mortgage_remaining||0) + (f.debt_remaining||0) > 0);
   if (hasDebts) {
     datasets.push({
@@ -3927,22 +4000,237 @@ function renderForecast() {
                 ...(hasDebts ? {y1:{ position:'right', grid:{display:false}, ticks:{color:'#EF4444', callback:v=>'£'+(v/1000).toFixed(0)+'k', font:{size:10}} }} : {})
        } });
 
-  // Future transactions list
-  const future = D.transactions.filter(t=>t.is_future).sort((a,b)=>a.date.localeCompare(b.date));
-  const el = document.getElementById('future-txns-list');
-  if(!future.length) { el.innerHTML='<div class="empty-state"><p>No scheduled transactions. Add one with a future date.</p></div>'; return; }
-  el.innerHTML = future.map(t=>`
-    <div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:12px">
-      <span style="color:var(--text3);font-size:12px;width:90px">${t.date}</span>
-      <span style="flex:1;font-size:13px">${t.description}${t.recurring_id ? ' <span style="font-size:9px;background:rgba(59,130,246,0.1);color:#3B82F6;padding:1px 5px;border-radius:3px">🔄 recurring</span>' : ''}</span>
-      <span class="cat-tag">${t.category||'Other'}</span>
-      <span class="${t.type==='credit'?'amount-credit':'amount-debit'};font-weight:500">
-        ${pv((t.type==='credit'?'+':'-') + fmtGBP(t.amount_gbp))}
+  // Render projections list
+  renderProjections();
+  // Monthly breakdown table
+  renderForecastBreakdown();
+}
+
+// ── Projection management ─────────────────────────────────────────────────────
+let _editProjId = null;
+
+function renderProjections() {
+  const projections = D.projections || [];
+  const el = document.getElementById('fc-projections-list');
+  if (!el) return;
+
+  if (!projections.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:20px 0">
+      <p style="margin-bottom:8px">No projections yet.</p>
+      <p style="font-size:12px;color:var(--text3)">Add manual projections or click <b>Auto-Detect</b> to find recurring patterns from your spending history.</p>
+    </div>`;
+    return;
+  }
+
+  const freqLabel = {monthly:'Monthly', weekly:'Weekly', yearly:'Yearly', once:'One-time'};
+  const manual = projections.filter(p => p.source !== 'auto');
+  const auto = projections.filter(p => p.source === 'auto');
+
+  let html = '';
+  const renderRow = (p) => {
+    const freq = freqLabel[p.frequency] || p.frequency;
+    const amtStr = p.frequency === 'once' ? fmtGBP(p.amount) : fmtGBP(p.amount) + '/' + (p.frequency === 'monthly' ? 'mo' : p.frequency === 'weekly' ? 'wk' : 'yr');
+    const typeColor = p.type === 'credit' ? 'var(--teal)' : 'var(--rose)';
+    const typeIcon = p.type === 'credit' ? '↑' : '↓';
+    const activeStyle = p.active === false ? 'opacity:0.4;' : '';
+    return `<div style="display:flex;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:10px;${activeStyle}">
+      <span style="color:${typeColor};font-size:14px;width:20px;text-align:center">${typeIcon}</span>
+      <span style="flex:1;font-size:13px">${p.description}
+        ${p.source === 'auto' ? '<span style="font-size:9px;background:rgba(59,130,246,0.1);color:#3B82F6;padding:1px 5px;border-radius:3px;margin-left:4px">auto</span>' : ''}
+        ${p.active === false ? '<span style="font-size:9px;background:rgba(239,68,68,0.1);color:var(--rose);padding:1px 5px;border-radius:3px;margin-left:4px">paused</span>' : ''}
       </span>
-      <span class="tag tag-scheduled">Scheduled</span>
-      <button class="action-btn edit" onclick="editTxn('${t.id}')" title="Edit">✏</button>
-      <button class="action-btn" onclick="deleteTxn('${t.id}')">✕</button>
-    </div>`).join('');
+      <span class="cat-tag" style="font-size:10px">${p.category || 'Other'}</span>
+      <span style="font-size:13px;font-weight:600;color:${typeColor};min-width:80px;text-align:right">${pv(amtStr)}</span>
+      <span style="font-size:10px;color:var(--text3);width:60px;text-align:center">${freq}</span>
+      <button class="action-btn" onclick="toggleProjectionActive('${p.id}',${!(p.active!==false)})" title="${p.active!==false?'Pause':'Resume'}" style="font-size:12px">${p.active!==false?'⏸':'▶'}</button>
+      <button class="action-btn edit" onclick="openProjectionModal('${p.id}')" title="Edit" style="font-size:12px">✏</button>
+      <button class="action-btn" onclick="deleteProjection('${p.id}')" style="font-size:12px">✕</button>
+    </div>`;
+  };
+
+  manual.forEach(p => html += renderRow(p));
+  if (auto.length) {
+    html += `<div style="padding:6px 0;font-size:10px;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--border)">Auto-detected from history</div>`;
+    auto.forEach(p => html += renderRow(p));
+  }
+  el.innerHTML = html;
+}
+
+function renderForecastBreakdown() {
+  const fc = D.forecast || [];
+  const el = document.getElementById('fc-monthly-breakdown');
+  if (!el || !fc.length) return;
+
+  let html = `<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:6px 8px;color:var(--text3)">Month</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--teal)">Projected In</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--rose)">Projected Out</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--text3)">Debt Pmts</th>
+      <th style="text-align:right;padding:6px 8px;color:var(--text2);font-weight:600">Balance</th>
+    </tr></thead><tbody>`;
+
+  fc.forEach(f => {
+    const net = (f.projected_in||0) - (f.projected_out||0) - (f.debt_payments||0);
+    html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">
+      <td style="padding:5px 8px;color:var(--text2)">${f.month}</td>
+      <td style="text-align:right;padding:5px 8px;color:var(--teal)">${fmtGBP(f.projected_in||0)}</td>
+      <td style="text-align:right;padding:5px 8px;color:var(--rose)">${fmtGBP(f.projected_out||0)}</td>
+      <td style="text-align:right;padding:5px 8px;color:var(--text3)">${fmtGBP(f.debt_payments||0)}</td>
+      <td style="text-align:right;padding:5px 8px;font-weight:600;color:${f.balance>=0?'var(--teal)':'var(--rose)'}">${fmtGBP(f.balance)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+function openProjectionModal(projId) {
+  _editProjId = projId || null;
+  const title = document.getElementById('projection-modal-title');
+  title.textContent = _editProjId ? 'Edit Projection' : 'Add Projection';
+
+  // Populate category dropdown
+  const catSel = document.getElementById('proj-category');
+  const cats = (D.categories_list || []);
+  catSel.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  if (_editProjId) {
+    const p = (D.projections || []).find(x => x.id === _editProjId);
+    if (p) {
+      document.getElementById('proj-description').value = p.description || '';
+      document.getElementById('proj-amount').value = p.amount || '';
+      document.getElementById('proj-type').value = p.type || 'debit';
+      document.getElementById('proj-frequency').value = p.frequency || 'monthly';
+      catSel.value = p.category || 'Other';
+      document.getElementById('proj-start').value = p.start_date || '';
+      document.getElementById('proj-end').value = p.end_date || '';
+    }
+  } else {
+    document.getElementById('proj-description').value = '';
+    document.getElementById('proj-amount').value = '';
+    document.getElementById('proj-type').value = 'debit';
+    document.getElementById('proj-frequency').value = 'monthly';
+    catSel.value = 'Other';
+    document.getElementById('proj-start').value = new Date().toISOString().slice(0,10);
+    document.getElementById('proj-end').value = '';
+  }
+  openModal('projection-modal', null);
+}
+
+async function saveProjection() {
+  const data = {
+    description: document.getElementById('proj-description').value.trim(),
+    amount: parseFloat(document.getElementById('proj-amount').value) || 0,
+    type: document.getElementById('proj-type').value,
+    frequency: document.getElementById('proj-frequency').value,
+    category: document.getElementById('proj-category').value,
+    start_date: document.getElementById('proj-start').value,
+    end_date: document.getElementById('proj-end').value,
+  };
+  if (!data.description || !data.amount) { toast('Description and amount required', 'error'); return; }
+
+  try {
+    if (_editProjId) {
+      await post(`/api/projections/${_editProjId}`, data, 'PUT');
+    } else {
+      await post('/api/projections', data);
+    }
+    closeModal('projection-modal');
+    toast(_editProjId ? 'Projection updated' : 'Projection added', 'success');
+    await load();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function deleteProjection(id) {
+  if (!confirm('Delete this projection?')) return;
+  try {
+    await fetch('/api/projections/' + id, {method:'DELETE', headers:{'Authorization':'Bearer '+localStorage.getItem('auth_token')}});
+    toast('Projection deleted', 'success');
+    await load();
+  } catch(e) { toast('Error deleting', 'error'); }
+}
+
+async function toggleProjectionActive(id, active) {
+  try {
+    await post(`/api/projections/${id}`, {active}, 'PUT');
+    await load();
+  } catch(e) { toast('Error', 'error'); }
+}
+
+async function autoDetectProjections() {
+  const btn = document.getElementById('fc-auto-btn');
+  const resultsEl = document.getElementById('fc-auto-detect-results');
+  btn.disabled = true;
+  btn.textContent = '⏳ Analyzing...';
+
+  try {
+    const res = await fetch('/api/projections/auto-detect', {headers:{'Authorization':'Bearer '+localStorage.getItem('auth_token')}});
+    const data = await res.json();
+    const detected = data.detected || [];
+
+    if (!detected.length) {
+      resultsEl.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--text3);background:var(--surface);border-radius:8px">No recurring patterns detected. Add more transaction history for better detection.</div>';
+      resultsEl.style.display = 'block';
+      return;
+    }
+
+    window._autoDetected = detected;
+
+    let html = `<div style="background:var(--surface);border-radius:8px;padding:12px;border:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:12px;color:var(--text2);font-weight:500">Detected ${detected.length} patterns from ${data.months_analyzed} months</span>
+        <button class="btn btn-gold btn-sm" onclick="acceptAllAutoProjections()">Accept All Selected</button>
+      </div>`;
+
+    detected.forEach((d, i) => {
+      const typeIcon = d.type === 'credit' ? '↑' : '↓';
+      const typeColor = d.type === 'credit' ? 'var(--teal)' : 'var(--rose)';
+      const conf = Math.round((d.confidence||0) * 100);
+      html += `<div style="display:flex;align-items:center;padding:7px 0;border-top:1px solid var(--border);gap:8px">
+        <input type="checkbox" id="auto-proj-${i}" checked style="accent-color:var(--gold);cursor:pointer">
+        <span style="color:${typeColor};width:16px">${typeIcon}</span>
+        <span style="flex:1;font-size:12px">${d.description} ${d.is_category_avg ? '<span style="font-size:9px;color:var(--text3)">(category avg)</span>' : ''}</span>
+        <span class="cat-tag" style="font-size:9px">${d.category}</span>
+        <span style="font-size:12px;font-weight:600;color:${typeColor};min-width:70px;text-align:right">${fmtGBP(d.amount)}/mo</span>
+        <span style="font-size:9px;color:var(--text3);width:40px;text-align:center">${conf}%</span>
+      </div>`;
+    });
+    html += '</div>';
+    resultsEl.innerHTML = html;
+    resultsEl.style.display = 'block';
+
+  } catch(e) {
+    toast('Error detecting patterns: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Auto-Detect';
+  }
+}
+
+async function acceptAllAutoProjections() {
+  const detected = window._autoDetected || [];
+  const selected = detected.filter((_, i) => {
+    const cb = document.getElementById(`auto-proj-${i}`);
+    return cb && cb.checked;
+  });
+
+  if (!selected.length) { toast('No items selected', 'error'); return; }
+
+  const items = selected.map(d => ({
+    description: d.description,
+    amount: d.amount,
+    type: d.type,
+    category: d.category,
+    frequency: d.frequency || 'monthly',
+    start_date: new Date().toISOString().slice(0,10),
+  }));
+
+  try {
+    await post('/api/projections/bulk', {items});
+    document.getElementById('fc-auto-detect-results').style.display = 'none';
+    toast(`Added ${items.length} projections`, 'success');
+    await load();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 // ── Transactions ──────────────────────────────────────────────────────────────
@@ -8760,8 +9048,10 @@ function set(id, text, cls) {
   if (!el.classList.contains('privacy-blur')) el.classList.add('privacy-blur');
 }
 function v(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
-async function post(url, body) {
-  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+async function post(url, body, method='POST') {
+  const res = await fetch(url, {method, headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('auth_token')}, body:JSON.stringify(body)});
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || res.statusText); }
+  return res.json();
 }
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 // Wrap a monetary value in a privacy-blur span (for use inside innerHTML template literals)

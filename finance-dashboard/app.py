@@ -338,6 +338,29 @@ def migrate_data(data):
         if 'bucket' not in c:
             c['bucket'] = 'isa'
 
+    # Projections system (replaces recurring → future transactions)
+    if 'projections' not in data:
+        data['projections'] = []
+        # Migrate existing recurring rules to projections
+        for rule in data.get('recurring', []):
+            data['projections'].append({
+                'id': rule['id'],
+                'description': rule.get('description', ''),
+                'amount': float(rule.get('amount', 0)),
+                'type': rule.get('type', 'debit'),
+                'category': rule.get('category', 'Other'),
+                'frequency': rule.get('frequency', 'monthly'),
+                'start_date': rule.get('start_date', datetime.now().strftime('%Y-%m-%d')),
+                'end_date': rule.get('end_date', ''),
+                'active': rule.get('active', True),
+                'source': 'migrated',
+            })
+        # Remove auto-generated future transactions (they were never real)
+        data['transactions'] = [t for t in data.get('transactions', [])
+                                if not (t.get('is_future') and t.get('source') == 'recurring')]
+    if 'recurring' not in data:
+        data['recurring'] = []
+
     return data
 
 def default_data():
@@ -398,6 +421,8 @@ def default_data():
                 'notes': '',
             }
         ],
+        'projections': [],
+        'recurring': [],
     }
 
 def save_data(data):
@@ -951,22 +976,76 @@ def get_all_data():
     monthly_mortgage_pmts = sum(_calc_monthly_payment(m) for m in data.get('mortgages', []))
     monthly_debt_pmts = sum(float(d.get('minimum_payment', 0)) for d in data.get('debts_detailed', []))
 
-    future_txns = [t for t in transactions if t.get('is_future') and not t.get('excluded')]
+    # ── Projection-based forecast ─────────────────────────────────────────
+    from dateutil.relativedelta import relativedelta
+    projections = [p for p in data.get('projections', []) if p.get('active', True)]
     forecast = []
     balance = bank_balance
-    # Track mortgage balance amortisation over forecast period
     mort_balances = [float(m.get('current_balance', 0)) for m in data.get('mortgages', [])]
     debt_balances = [float(d.get('balance', 0)) for d in data.get('debts_detailed', [])]
-    
+
+    # Calculate avg spend from past 3 months as fallback
+    _cutoff_90 = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+    _past_debits = [t['amount_gbp'] for t in transactions
+                    if t.get('type') == 'debit' and not t.get('excluded')
+                    and _cutoff_90 <= t.get('date', '') <= today
+                    and t.get('date', '') <= today]
+    _fallback_monthly_spend = round(sum(_past_debits) / 3, 2) if _past_debits else data.get('monthly_fixed_expenses', 0)
+
     for i in range(1, 13):
         month_dt = datetime.now() + timedelta(days=30 * i)
         month_key = month_dt.strftime('%Y-%m')
-        scheduled_in = sum(t['amount_gbp'] for t in future_txns
-            if t.get('date', '').startswith(month_key) and t.get('type') == 'credit')
-        scheduled_out = sum(t['amount_gbp'] for t in future_txns
-            if t.get('date', '').startswith(month_key) and t.get('type') == 'debit')
-        
-        # Amortise mortgage balances (reduce by principal portion each month)
+        month_start = datetime(month_dt.year, month_dt.month, 1).date()
+        if month_dt.month == 12:
+            month_end = datetime(month_dt.year + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            month_end = datetime(month_dt.year, month_dt.month + 1, 1).date() - timedelta(days=1)
+
+        projected_in = 0
+        projected_out = 0
+        projection_items = []
+
+        for p in projections:
+            amt = float(p.get('amount', 0))
+            p_start = datetime.strptime(p['start_date'], '%Y-%m-%d').date() if p.get('start_date') else month_start
+            p_end = datetime.strptime(p['end_date'], '%Y-%m-%d').date() if p.get('end_date') else None
+
+            # Check if this projection is active in this month
+            if p_start > month_end:
+                continue
+            if p_end and p_end < month_start:
+                continue
+
+            freq = p.get('frequency', 'monthly')
+            hits = 0
+
+            if freq == 'once':
+                if p_start.strftime('%Y-%m') == month_key:
+                    hits = 1
+            elif freq == 'monthly':
+                hits = 1
+            elif freq == 'weekly':
+                # Count weeks in this month
+                import calendar
+                days_in_month = calendar.monthrange(month_dt.year, month_dt.month)[1]
+                hits = round(days_in_month / 7, 1)
+            elif freq == 'yearly':
+                if p_start.month == month_dt.month:
+                    hits = 1
+
+            if hits > 0:
+                total_amt = round(amt * hits, 2)
+                if p.get('type') == 'credit':
+                    projected_in += total_amt
+                else:
+                    projected_out += total_amt
+                projection_items.append({'description': p.get('description', ''), 'amount': total_amt, 'type': p.get('type', 'debit')})
+
+        # If no projections exist at all, fall back to average spend
+        if not projections:
+            projected_out = _fallback_monthly_spend
+
+        # Amortise mortgage balances
         mort_interest = 0
         mort_principal = 0
         for idx, m in enumerate(data.get('mortgages', [])):
@@ -979,8 +1058,7 @@ def get_all_data():
             mort_balances[idx] = max(0, mort_balances[idx] - princ_portion)
             mort_interest += int_portion
             mort_principal += princ_portion
-        
-        # Amortise detailed debts
+
         debt_interest = 0
         for idx, d in enumerate(data.get('debts_detailed', [])):
             if debt_balances[idx] <= 0:
@@ -991,22 +1069,19 @@ def get_all_data():
             princ_portion = min(max(0, payment - int_portion), debt_balances[idx])
             debt_balances[idx] = max(0, debt_balances[idx] - princ_portion)
             debt_interest += int_portion
-        
+
         total_debt_payments = monthly_mortgage_pmts + monthly_debt_pmts
-        # Cash forecast: income + scheduled_in - avg_spend - scheduled_out - debt_payments
-        # NOTE: Monthly investment contributions are NOT deducted here.
-        # They exist only for retirement/Monte Carlo growth projection.
-        # Actual cash outflows for investments should be added as scheduled transactions.
-        balance = round(balance + monthly_income + scheduled_in - avg_monthly_spend - scheduled_out - total_debt_payments, 2)
-        
+        balance = round(balance + monthly_income + projected_in - projected_out - total_debt_payments, 2)
+
         forecast.append({
             'month': month_dt.strftime('%b %Y'),
             'balance': balance,
-            'scheduled_in': round(scheduled_in, 2),
-            'scheduled_out': round(scheduled_out, 2),
+            'projected_in': round(projected_in, 2),
+            'projected_out': round(projected_out, 2),
             'debt_payments': round(total_debt_payments, 2),
             'mortgage_remaining': round(sum(mort_balances), 2),
             'debt_remaining': round(sum(debt_balances), 2),
+            'items': projection_items,
         })
 
     categories = {}
@@ -1103,6 +1178,7 @@ def get_all_data():
             'total_assets': round(bank_balance + total_investments + property_value + other_assets, 2),
         },
         'forecast': forecast,
+        'projections': data.get('projections', []),
         'monthly_contributions': data.get('monthly_contributions', {}),
         'retirement': data.get('retirement', {}),
         'categories': categories,
@@ -2008,6 +2084,21 @@ def import_emma_sheet():
             acct_name = (row.get('Account') or '').strip()
             currency = (row.get('Currency') or 'GBP').strip()
 
+            # Skip non-bank accounts (crypto, pension, manual/offline)
+            _skip_banks = {'binance', 'coinbase', 'kraken', 'manual account',
+                           'bitcoin address', 'ethereum address', 'blockchain',
+                           'crypto.com', 'gemini', 'kucoin', 'bybit'}
+            _skip_types = {'crypto', 'pension', 'investment'}
+            emma_type_lower = (row.get('Type') or '').strip().lower()
+            if bank_name.lower() in _skip_banks or emma_cat_lower in _skip_types:
+                skipped += 1
+                continue
+            # Also skip if bank name contains crypto/pension/blockchain keywords
+            _bl = bank_name.lower()
+            if any(kw in _bl for kw in ['crypto', 'bitcoin', 'ethereum', 'blockchain', 'binance', 'coinbase']):
+                skipped += 1
+                continue
+
             # Build account ID from bank+account combo
             acct_key = f"emma_{(bank_name + '_' + acct_name).lower().replace(' ', '_').replace('/', '_')}"
             if acct_key not in existing_accounts and (bank_name or acct_name):
@@ -2081,126 +2172,280 @@ def import_emma_sheet():
     })
 
 
+# ── Projections ────────────────────────────────────────────────────────────────
+
+@app.route('/api/projections', methods=['GET'])
+def get_projections():
+    """Get all projections."""
+    data = load_data()
+    return jsonify(data.get('projections', []))
+
+
+@app.route('/api/projections', methods=['POST'])
+def add_projection():
+    """Add a projection (manual or auto-detected)."""
+    data = load_data()
+    body = request.json
+    if 'projections' not in data:
+        data['projections'] = []
+
+    proj = {
+        'id': str(uuid.uuid4()),
+        'description': body.get('description', ''),
+        'amount': float(body.get('amount', 0)),
+        'type': body.get('type', 'debit'),
+        'category': body.get('category', 'Other'),
+        'frequency': body.get('frequency', 'monthly'),
+        'start_date': body.get('start_date', datetime.now().strftime('%Y-%m-%d')),
+        'end_date': body.get('end_date', ''),
+        'active': True,
+        'source': body.get('source', 'manual'),
+    }
+    data['projections'].append(proj)
+    save_data(data)
+    return jsonify({'ok': True, 'projection': proj})
+
+
+@app.route('/api/projections/<proj_id>', methods=['PUT'])
+def update_projection(proj_id):
+    """Update a projection."""
+    data = load_data()
+    body = request.json
+    proj = None
+    for p in data.get('projections', []):
+        if p['id'] == proj_id:
+            proj = p
+            break
+    if not proj:
+        return jsonify({'error': 'Projection not found'}), 404
+
+    for field in ['description', 'amount', 'type', 'category', 'frequency', 'start_date', 'end_date', 'active']:
+        if field in body:
+            proj[field] = body[field]
+    if 'amount' in body:
+        proj['amount'] = float(body['amount'])
+    if 'active' in body:
+        proj['active'] = bool(body['active'])
+
+    save_data(data)
+    return jsonify({'ok': True, 'projection': proj})
+
+
+@app.route('/api/projections/<proj_id>', methods=['DELETE'])
+def delete_projection(proj_id):
+    """Delete a projection."""
+    data = load_data()
+    data['projections'] = [p for p in data.get('projections', []) if p['id'] != proj_id]
+    save_data(data)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/projections/auto-detect', methods=['GET'])
+def auto_detect_projections():
+    """Analyze past transactions to detect recurring spending patterns."""
+    data = load_data()
+    rates = get_exchange_rates()
+    today = datetime.now().strftime('%Y-%m-%d')
+    cutoff = (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
+
+    # Get past 6 months of actual transactions (no future, no excluded)
+    txns = []
+    for t in data.get('transactions', []):
+        d = t.get('date', '')
+        if d > today or d < cutoff or t.get('excluded'):
+            continue
+        tx = dict(t)
+        tx['amount_gbp'] = to_gbp(tx.get('amount', 0), tx.get('currency', 'GBP'), rates)
+        txns.append(tx)
+
+    from collections import defaultdict
+    import re
+
+    # 1. Detect recurring by description pattern (same description, similar amount, multiple months)
+    desc_groups = defaultdict(list)
+    for t in txns:
+        # Normalize description
+        desc = re.sub(r'\s+', ' ', t.get('description', '').strip().lower())
+        if not desc:
+            continue
+        month = t.get('date', '')[:7]
+        desc_groups[desc].append({
+            'month': month,
+            'amount': t['amount_gbp'],
+            'type': t.get('type', 'debit'),
+            'category': t.get('category', 'Other'),
+        })
+
+    detected = []
+    existing_descs = {p.get('description', '').lower() for p in data.get('projections', [])}
+
+    for desc, entries in desc_groups.items():
+        months = set(e['month'] for e in entries)
+        if len(months) < 2:
+            continue
+
+        amounts = [e['amount'] for e in entries]
+        median_amt = sorted(amounts)[len(amounts) // 2]
+
+        # Check amount consistency (within ±30%)
+        consistent = sum(1 for a in amounts if abs(a - median_amt) / max(median_amt, 0.01) < 0.3)
+        if consistent < len(amounts) * 0.6:
+            continue
+
+        # Skip if already a projection
+        if desc in existing_descs:
+            continue
+
+        entry_type = entries[0]['type']
+        category = entries[0]['category']
+
+        # Determine frequency
+        if len(months) >= 4:
+            frequency = 'monthly'
+        else:
+            frequency = 'monthly'
+
+        detected.append({
+            'description': entries[0].get('category', desc).title() if desc == entries[0].get('category', '').lower() else desc.title(),
+            'amount': round(median_amt, 2),
+            'type': entry_type,
+            'category': category,
+            'frequency': frequency,
+            'occurrences': len(entries),
+            'months_seen': len(months),
+            'confidence': round(consistent / len(amounts), 2),
+        })
+
+    # 2. Category-level averages for categories without specific detected patterns
+    detected_cats = {d['category'] for d in detected}
+    cat_monthly = defaultdict(lambda: defaultdict(float))
+    for t in txns:
+        if t.get('type') != 'debit':
+            continue
+        cat = t.get('category', 'Other')
+        month = t.get('date', '')[:7]
+        cat_monthly[cat][month] += t['amount_gbp']
+
+    months_active = len(set(t.get('date', '')[:7] for t in txns))
+    months_active = max(1, min(6, months_active))
+
+    for cat, month_totals in cat_monthly.items():
+        if cat in detected_cats:
+            continue
+        if len(month_totals) < 2:
+            continue
+        avg = round(sum(month_totals.values()) / months_active, 2)
+        if avg < 10:
+            continue
+        detected.append({
+            'description': f'{cat} (avg)',
+            'amount': avg,
+            'type': 'debit',
+            'category': cat,
+            'frequency': 'monthly',
+            'occurrences': sum(len([1]) for _ in month_totals),
+            'months_seen': len(month_totals),
+            'confidence': 0.5,
+            'is_category_avg': True,
+        })
+
+    # Sort by amount descending
+    detected.sort(key=lambda x: -x['amount'])
+
+    return jsonify({'ok': True, 'detected': detected, 'months_analyzed': months_active})
+
+
+@app.route('/api/projections/bulk', methods=['POST'])
+def bulk_add_projections():
+    """Accept multiple auto-detected projections at once."""
+    data = load_data()
+    body = request.json
+    items = body.get('items', [])
+    if 'projections' not in data:
+        data['projections'] = []
+
+    added = []
+    for item in items:
+        proj = {
+            'id': str(uuid.uuid4()),
+            'description': item.get('description', ''),
+            'amount': float(item.get('amount', 0)),
+            'type': item.get('type', 'debit'),
+            'category': item.get('category', 'Other'),
+            'frequency': item.get('frequency', 'monthly'),
+            'start_date': item.get('start_date', datetime.now().strftime('%Y-%m-%d')),
+            'end_date': item.get('end_date', ''),
+            'active': True,
+            'source': 'auto',
+        }
+        data['projections'].append(proj)
+        added.append(proj)
+
+    save_data(data)
+    return jsonify({'ok': True, 'added': len(added), 'projections': added})
+
+
+# ── Recurring (legacy — aliases to projections) ───────────────────────────────
+
 @app.route('/api/recurring', methods=['GET'])
 def get_recurring():
-    """Get all recurring payment rules."""
+    """Legacy: return projections as recurring rules."""
     data = load_data()
-    return jsonify(data.get('recurring', []))
+    return jsonify(data.get('projections', []))
 
 
 @app.route('/api/recurring', methods=['POST'])
 def add_recurring():
-    """Add a recurring payment that auto-generates future transactions."""
+    """Legacy: create a projection from recurring rule format."""
     data = load_data()
     body = request.json
-    if not data.get('recurring'):
-        data['recurring'] = []
-
-    rule = {
+    if 'projections' not in data:
+        data['projections'] = []
+    proj = {
         'id': str(uuid.uuid4()),
         'description': body.get('description', ''),
         'amount': float(body.get('amount', 0)),
         'type': body.get('type', 'debit'),
         'category': body.get('category', 'Bills & Utilities'),
-        'currency': body.get('currency', 'GBP'),
-        'account_id': body.get('account_id', ''),
-        'frequency': body.get('frequency', 'monthly'),  # weekly, monthly, yearly
+        'frequency': body.get('frequency', 'monthly'),
         'start_date': body.get('start_date', datetime.now().strftime('%Y-%m-%d')),
         'end_date': body.get('end_date', ''),
-        'active': True
+        'active': True,
+        'source': 'manual',
     }
-    data['recurring'].append(rule)
-
-    # Generate future transactions for next 12 months
-    _generate_recurring_transactions(data, rule)
+    data['projections'].append(proj)
     save_data(data)
-    return jsonify({'ok': True, 'rule': rule})
+    return jsonify({'ok': True, 'rule': proj})
 
 
 @app.route('/api/recurring/<rule_id>', methods=['DELETE'])
 def delete_recurring(rule_id):
+    """Legacy: delete a projection by ID."""
     data = load_data()
-    data['recurring'] = [r for r in data.get('recurring', []) if r['id'] != rule_id]
-    # Remove future transactions generated by this rule
-    data['transactions'] = [t for t in data.get('transactions', [])
-                           if t.get('recurring_id') != rule_id or not t.get('is_future')]
+    data['projections'] = [p for p in data.get('projections', []) if p['id'] != rule_id]
     save_data(data)
     return jsonify({'ok': True})
 
 
 @app.route('/api/recurring/<rule_id>', methods=['PUT'])
 def update_recurring(rule_id):
-    """Update a recurring rule and regenerate all its future transactions."""
+    """Legacy: update a projection by ID."""
     data = load_data()
     body = request.json
-    
-    rule = None
-    for r in data.get('recurring', []):
-        if r['id'] == rule_id:
-            rule = r
+    proj = None
+    for p in data.get('projections', []):
+        if p['id'] == rule_id:
+            proj = p
             break
-    
-    if not rule:
-        return jsonify({'error': 'Recurring rule not found'}), 404
-    
-    # Update rule fields
-    if 'amount' in body: rule['amount'] = body['amount']
-    if 'description' in body: rule['description'] = body['description']
-    if 'category' in body: rule['category'] = body['category']
-    if 'type' in body: rule['type'] = body['type']
-    if 'frequency' in body: rule['frequency'] = body['frequency']
-    if 'end_date' in body: rule['end_date'] = body['end_date']
-    if 'currency' in body: rule['currency'] = body['currency']
-    
-    # Regenerate all future transactions for this rule (removes old ones, creates new)
-    _generate_recurring_transactions(data, rule)
+    if not proj:
+        return jsonify({'error': 'Not found'}), 404
+    for field in ['amount', 'description', 'category', 'type', 'frequency', 'end_date']:
+        if field in body:
+            proj[field] = body[field]
+    if 'amount' in body:
+        proj['amount'] = float(body['amount'])
     save_data(data)
-    
-    return jsonify({'ok': True, 'rule': rule})
-
-
-def _generate_recurring_transactions(data, rule):
-    """Generate future transaction instances for a recurring rule."""
-    from dateutil.relativedelta import relativedelta
-    today = datetime.now().date()
-    start = datetime.strptime(rule['start_date'], '%Y-%m-%d').date()
-    end_date = datetime.strptime(rule['end_date'], '%Y-%m-%d').date() if rule.get('end_date') else (today + timedelta(days=365))
-
-    # Remove existing future transactions for this rule
-    data['transactions'] = [t for t in data.get('transactions', [])
-                           if not (t.get('recurring_id') == rule['id'] and t.get('is_future'))]
-
-    freq = rule.get('frequency', 'monthly')
-    current = max(start, today)
-
-    while current <= end_date:
-        date_str = current.strftime('%Y-%m-%d')
-        data['transactions'].append({
-            'id': str(uuid.uuid4()),
-            'date': date_str,
-            'description': rule['description'],
-            'amount': rule['amount'],
-            'type': rule['type'],
-            'category': rule['category'],
-            'currency': rule['currency'],
-            'account_id': rule.get('account_id', ''),
-            'notes': f"Recurring ({freq})",
-            'is_future': True,
-            'recurring_id': rule['id'],
-            'source': 'recurring'
-        })
-
-        try:
-            if freq == 'weekly':
-                current += timedelta(weeks=1)
-            elif freq == 'monthly':
-                current += relativedelta(months=1)
-            elif freq == 'yearly':
-                current += relativedelta(years=1)
-            else:
-                break
-        except Exception:
-            break
+    return jsonify({'ok': True, 'rule': proj})
 
 
 @app.route('/api/settings', methods=['POST'])
