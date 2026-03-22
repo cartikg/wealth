@@ -9653,9 +9653,10 @@ function showSyncDateChoice(bankName) {
 
 async function loadBanks() {
   try {
+    const authH = { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') };
     const [tlR, plaidR] = await Promise.all([
-      fetch('/api/truelayer/status'),
-      fetch('/api/plaid/status'),
+      fetch('/api/truelayer/status', { headers: authH }),
+      fetch('/api/plaid/status', { headers: authH }),
     ]);
     tlStatus = await tlR.json();
     plaidStatus = await plaidR.json();
@@ -9750,8 +9751,11 @@ async function tlSync(sinceDate) {
   toast('Syncing bank transactions...', 'info');
 
   try {
-    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sinceDate ? { since_date: sinceDate } : {}) };
+    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') }, body: JSON.stringify(sinceDate ? { since_date: sinceDate } : {}) };
     const r = await fetch('/api/truelayer/sync', fetchOpts);
+    if (!r.ok && !r.headers.get('content-type')?.includes('json')) {
+      throw new Error(`Server returned ${r.status} — try again shortly`);
+    }
     const d = await r.json();
 
     const resultEl = document.getElementById('tl-sync-result');
@@ -9820,7 +9824,7 @@ function renderSyncedBalances() {
 
 async function tlDisconnect(connectionId) {
   if (!confirm('Disconnect this bank? Imported transactions will remain.')) return;
-  await fetch(`/api/truelayer/disconnect/${connectionId}`, { method: 'DELETE' });
+  await fetch(`/api/truelayer/disconnect/${connectionId}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') } });
   toast('Bank disconnected');
   await loadBanks();
   await load();
@@ -9831,7 +9835,7 @@ async function tlDisconnect(connectionId) {
 
 async function plaidConnect() {
   try {
-    const r = await fetch('/api/plaid/create-link-token', { method: 'POST' });
+    const r = await fetch('/api/plaid/create-link-token', { method: 'POST', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') } });
     const d = await r.json();
     if (d.error) { toast('Error: ' + d.error, 'error'); return; }
 
@@ -9871,8 +9875,11 @@ async function plaidConnect() {
 async function plaidSync(sinceDate) {
   toast('Syncing Plaid transactions...', 'info');
   try {
-    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sinceDate ? { since_date: sinceDate } : {}) };
+    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') }, body: JSON.stringify(sinceDate ? { since_date: sinceDate } : {}) };
     const r = await fetch('/api/plaid/sync', fetchOpts);
+    if (!r.ok && !r.headers.get('content-type')?.includes('json')) {
+      throw new Error(`Server returned ${r.status} — try again shortly`);
+    }
     const d = await r.json();
 
     const resultEl = document.getElementById('tl-sync-result');
@@ -9909,7 +9916,7 @@ async function plaidSyncOne(connectionId) {
 
 async function plaidDisconnect(connectionId) {
   if (!confirm('Disconnect this Plaid bank? Imported transactions will remain.')) return;
-  await fetch(`/api/plaid/disconnect/${connectionId}`, { method: 'DELETE' });
+  await fetch(`/api/plaid/disconnect/${connectionId}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') } });
   toast('Plaid bank disconnected');
   await loadBanks();
   await load();
