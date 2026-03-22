@@ -7665,33 +7665,56 @@ def _run_backtest_thread(tickers):
         risk_pct = float(cfg.get('risk_per_trade', 0.015))
 
         # Batch-download 10 years of daily OHLCV
-        print('[backtest] downloading 10y price data…')
+        # Normalise portfolio names (SOLANA→SOL-USD, BITCOIN→BTC-USD, etc.)
+        yf_to_orig = {}
+        for t in tickers:
+            yf_sym = _normalize_yf_symbol(t.upper())
+            yf_to_orig.setdefault(yf_sym, t.upper())
+        yf_symbols = sorted(yf_to_orig.keys())
+
+        print(f'[backtest] downloading 10y price data for {len(yf_symbols)} tickers…')
         raw = yf.download(
-            tickers=' '.join(tickers),
+            yf_symbols,
             period='10y',
             interval='1d',
-            group_by='ticker',
             auto_adjust=True,
             progress=False,
             threads=True,
         )
 
         hist_map = {}
-        if len(tickers) == 1:
-            if len(raw) >= 210 and 'Close' in raw.columns:
-                hist_map[tickers[0].upper()] = raw
+        if raw is None or len(raw) == 0:
+            print('[backtest] WARNING: download returned empty')
         elif isinstance(raw.columns, pd.MultiIndex):
-            lvl1 = raw.columns.get_level_values(1)
-            for t in tickers:
-                for key in (t, t.upper(), t.lower()):
-                    if key in lvl1:
-                        try:
-                            df = raw.xs(key, level=1, axis=1).copy()
-                            if len(df) >= 210 and 'Close' in df.columns:
-                                hist_map[t.upper()] = df
-                            break
-                        except Exception:
-                            pass
+            # Auto-detect which level has ticker symbols (robust across yfinance versions)
+            yf_set    = set(yf_symbols)
+            lvl0_vals = set(raw.columns.get_level_values(0).unique())
+            lvl1_vals = set(raw.columns.get_level_values(1).unique())
+            if yf_set & lvl1_vals:
+                ticker_level = 1
+            elif yf_set & lvl0_vals:
+                ticker_level = 0
+            else:
+                print(f'[backtest] WARNING: tickers not found in MultiIndex levels')
+                ticker_level = 1  # fallback
+
+            for yf_sym in yf_symbols:
+                orig = yf_to_orig.get(yf_sym, yf_sym)
+                try:
+                    df = raw.xs(yf_sym, axis=1, level=ticker_level).copy()
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                    if len(df) >= 210 and 'Close' in df.columns:
+                        hist_map[orig] = df
+                except Exception as exc:
+                    print(f'[backtest] parse error {yf_sym}: {exc}')
+        elif len(yf_symbols) == 1:
+            # Single ticker with flat columns
+            orig = yf_to_orig.get(yf_symbols[0], yf_symbols[0])
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            if len(raw) >= 210 and 'Close' in raw.columns:
+                hist_map[orig] = raw
 
         print(f'[backtest] got data for {len(hist_map)}/{len(tickers)} tickers')
 
