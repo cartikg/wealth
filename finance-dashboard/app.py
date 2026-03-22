@@ -6764,10 +6764,11 @@ def _fetch_batch_universe(tickers):
     keyed under LTC-USD.  The result: multiple tickers produce bit-for-bit
     identical signals.
 
-    The fix: one yf.download(list_of_tickers, group_by='ticker') call.
-    yfinance handles parallelism internally and returns a properly-keyed
-    MultiIndex DataFrame where each ticker's data is separated at the
-    column level, making cross-contamination impossible.
+    The fix: one yf.download(list_of_tickers) call — no group_by, no
+    ThreadPoolExecutor.  yfinance returns a MultiIndex DataFrame with
+    (column, ticker) structure.  We extract each ticker's data via
+    .xs(ticker, axis=1, level=1), which is unambiguous regardless of
+    how yfinance orders its MultiIndex levels.
 
     Returns dict: original_ticker (upper) → DataFrame.
     """
@@ -6789,12 +6790,10 @@ def _fetch_batch_universe(tickers):
 
     # ── 1. Build original ↔ yfinance symbol mapping ──────────────────────────
     yf_to_orig = {}     # 'BTC-USD' → 'BTC-USD' (or 'BITCOIN' → 'BTC-USD')
-    orig_to_yf = {}     # 'BITCOIN' → 'BTC-USD'
     for t in tickers:
         s = t.upper()
         yf_sym = _normalize_yf_symbol(s)
         yf_to_orig.setdefault(yf_sym, s)   # first occurrence wins
-        orig_to_yf[s] = yf_sym
 
     yf_symbols = sorted(yf_to_orig.keys())
     print(f'[signals] downloading {len(yf_symbols)} tickers via batch yf.download…')
@@ -6805,14 +6804,19 @@ def _fetch_batch_universe(tickers):
 
     def _do_download():
         try:
+            # Do NOT use group_by='ticker' — the default (column, ticker)
+            # MultiIndex is more reliable across yfinance versions and lets
+            # us use .xs(ticker, axis=1, level=1) for unambiguous extraction.
             raw = yf.download(
                 yf_symbols,
                 period='8mo', interval='1d',
                 auto_adjust=True, progress=False,
-                group_by='ticker', threads=True,
+                threads=True,
             )
             container['raw'] = raw
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
             dl_error[0] = exc
 
     dl = _thr.Thread(target=_do_download, daemon=True)
@@ -6838,53 +6842,85 @@ def _fetch_batch_universe(tickers):
 
     # ── 3. Parse the result into per-ticker DataFrames ────────────────────────
     result = {}
-
-    def _extract_df(df):
-        """Clean a single-ticker DataFrame: ensure flat columns, OHLCV only,
-        drop NaN, require ≥ 55 bars."""
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df.copy()
-            df.columns = df.columns.get_level_values(0)
-        needed = {'Open', 'High', 'Low', 'Close', 'Volume'}
-        if not needed.issubset(set(df.columns)):
-            return None
-        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-        df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
-        return df if len(df) >= 55 else None
+    ohlcv = ['Open', 'High', 'Low', 'Close', 'Volume']
 
     if isinstance(raw.columns, pd.MultiIndex):
-        if len(yf_symbols) == 1:
-            # Single-ticker download still returns MultiIndex in yfinance 0.2.31+
-            yf_sym = yf_symbols[0]
-            orig   = yf_to_orig.get(yf_sym, yf_sym)
+        # Determine which MultiIndex level contains the ticker symbols.
+        # yfinance default:       level-0 = OHLCV column, level-1 = ticker
+        # yfinance group_by=ticker: level-0 = ticker,      level-1 = OHLCV column
+        lvl0_vals = set(raw.columns.get_level_values(0).unique())
+        lvl1_vals = set(raw.columns.get_level_values(1).unique())
+        yf_set    = set(yf_symbols)
+
+        if yf_set & lvl1_vals:
+            # Default structure: (OHLCV, ticker) — tickers are at level 1
+            ticker_level = 1
+            available = [t for t in raw.columns.get_level_values(1).unique() if t in yf_set]
+        elif yf_set & lvl0_vals:
+            # group_by='ticker' structure: (ticker, OHLCV) — tickers are at level 0
+            ticker_level = 0
+            available = [t for t in raw.columns.get_level_values(0).unique() if t in yf_set]
+        else:
+            # Unknown structure — log and bail
+            print(f'[signals] WARNING: cannot find tickers in MultiIndex levels')
+            print(f'  level-0 sample: {list(lvl0_vals)[:5]}')
+            print(f'  level-1 sample: {list(lvl1_vals)[:5]}')
+            available = []
+
+        for yf_sym in available:
+            orig = yf_to_orig.get(yf_sym, yf_sym)
             try:
-                df = _extract_df(raw)
-                if df is not None:
+                # .xs() extracts a cross-section: all columns for this ticker,
+                # returning a flat-column DataFrame regardless of level ordering.
+                df = raw.xs(yf_sym, axis=1, level=ticker_level).copy()
+                # Ensure we have the needed columns
+                cols = set(df.columns)
+                if 'Close' not in cols:
+                    continue
+                keep = [c for c in ohlcv if c in cols]
+                df = df[keep]
+                df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
+                if len(df) >= 55:
                     result[orig] = df
             except Exception as exc:
                 print(f'[signals] parse error {yf_sym}: {exc}')
-        else:
-            # group_by='ticker': level-0 = ticker symbol, level-1 = OHLCV column
-            available = raw.columns.get_level_values(0).unique()
-            for yf_sym in available:
-                orig = yf_to_orig.get(yf_sym, yf_sym)
-                try:
-                    df = _extract_df(raw[yf_sym])
-                    if df is not None:
-                        result[orig] = df
-                except Exception as exc:
-                    print(f'[signals] parse error {yf_sym}: {exc}')
     else:
-        # Flat columns — older yfinance or single ticker
-        if len(yf_symbols) == 1:
+        # Flat columns — only possible for a single-ticker download
+        if len(yf_symbols) == 1 and 'Close' in raw.columns:
             yf_sym = yf_symbols[0]
             orig   = yf_to_orig.get(yf_sym, yf_sym)
             try:
-                df = _extract_df(raw)
-                if df is not None:
+                keep = [c for c in ohlcv if c in raw.columns]
+                df = raw[keep].copy()
+                df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
+                if len(df) >= 55:
                     result[orig] = df
             except Exception:
                 pass
+
+    # ── 3b. Fallback: sequential single-ticker downloads for any missing ─────
+    missing = [s for s in yf_symbols if yf_to_orig.get(s, s) not in result]
+    if missing and len(result) < len(yf_symbols):
+        print(f'[signals] batch missed {len(missing)} tickers — sequential fallback…')
+        for yf_sym in missing:
+            orig = yf_to_orig.get(yf_sym, yf_sym)
+            try:
+                df = yf.download(yf_sym, period='8mo', interval='1d',
+                                 auto_adjust=True, progress=False)
+                if df is None or len(df) < 55:
+                    continue
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                if 'Close' not in df.columns:
+                    continue
+                keep = [c for c in ohlcv if c in df.columns]
+                df = df[keep].copy()
+                df.dropna(subset=['Close', 'High', 'Low', 'Volume'], inplace=True)
+                if len(df) >= 55:
+                    result[orig] = df
+                    print(f'[signals]   ✓ {yf_sym} recovered ({len(df)} bars)')
+            except Exception as exc:
+                print(f'[signals]   ✗ {yf_sym}: {exc}')
 
     print(f'[signals] download complete: {len(result)}/{len(tickers)} tickers with data')
 
