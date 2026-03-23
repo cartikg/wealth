@@ -5110,10 +5110,12 @@ def tl_get(connection, endpoint):
 
     headers = {'Authorization': f'Bearer {connection["access_token"]}'}
     try:
-        r = requests.get(f'{TL_API_URL}{endpoint}', headers=headers, timeout=15)
+        r = requests.get(f'{TL_API_URL}{endpoint}', headers=headers, timeout=(5, 10))
         if r.status_code == 200:
             return r.json(), None
         return None, f'API error {r.status_code}: {r.text[:200]}'
+    except requests.exceptions.Timeout:
+        return None, f'Timeout fetching {endpoint}'
     except Exception as e:
         return None, str(e)
 
@@ -5132,6 +5134,7 @@ def tl_status():
             'bank_id': c.get('bank_id', ''),
             'connected_at': c.get('connected_at', ''),
             'accounts': c.get('accounts', []),
+            'cards': c.get('cards', []),
             'last_synced': c.get('last_synced'),
             'status': c.get('status', 'connected'),
         } for c in connections]
@@ -5490,7 +5493,9 @@ def tl_sync():
             elif txn_err:
                 conn_errors.append(f'{acct_name} transactions: {txn_err}')
 
-        # ── Credit Cards: ensure local accounts exist (no API calls to avoid timeout) ──
+        # ── Credit Cards: ensure local accounts exist ──
+        # Card balances are fetched separately via /api/truelayer/discover-cards
+        # to avoid blocking the main sync (TrueLayer cards API can be slow).
         for card in conn.get('cards', []):
             card_id   = card['account_id']
             currency  = card.get('currency', 'GBP')
