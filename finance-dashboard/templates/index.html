@@ -1311,13 +1311,15 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
 
       <!-- ═══ Live Accounts ═══ -->
       <div id="accounts-live-section" style="margin-bottom:24px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer" onclick="toggleAcctGroup('live')">
+          <span class="card-chevron" id="acct-chev-live" style="font-size:10px;transition:transform 0.2s;transform:rotate(90deg)">▸</span>
           <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal)"></span>
           <div style="font-family:var(--font-display);font-size:16px;font-weight:700">Live Accounts</div>
           <span style="font-size:10px;background:var(--teal-dim);color:var(--teal);padding:2px 8px;border-radius:10px">Synced</span>
           <div style="flex:1"></div>
           <div style="font-size:12px;color:var(--text3)" id="live-section-summary" class="privacy-blur"></div>
         </div>
+        <div id="accounts-live-body">
         <!-- Live: Current & Savings -->
         <div id="live-current-section" style="margin-bottom:16px">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding:0 0 8px 4px;display:flex;align-items:center;gap:6px">
@@ -1334,6 +1336,7 @@ tr.future-row td:first-child::before { content: '⏰ '; font-size: 11px; }
           </div>
           <div id="live-credit-list" class="acct-list"></div>
         </div>
+        </div><!-- /accounts-live-body -->
       </div>
 
       <!-- ═══ Manual & Imported ═══ -->
@@ -4757,14 +4760,14 @@ function renderAccounts() {
   setTimeout(loadBankLogos, 100);
 }
 
-// Toggle manual accounts collapse/expand
+// Toggle account group collapse/expand (works for both 'live' and 'manual')
 function toggleAcctGroup(group) {
   const body = document.getElementById(`accounts-${group}-body`);
   const chev = document.getElementById(`acct-chev-${group}`);
   if (!body) return;
   const isHidden = body.style.display === 'none';
   body.style.display = isHidden ? '' : 'none';
-  if (chev) chev.textContent = isHidden ? '▾' : '▸';
+  if (chev) chev.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
 }
 
 function renderAccountRow(a, accMap, isCredit) {
@@ -9662,14 +9665,6 @@ async function loadBanks() {
     plaidStatus = await plaidR.json();
     renderBanks();
 
-    // Auto-discover credit cards for connections that pre-date cards support (one-time)
-    if (!window._cardsDiscovered && tlStatus.connections?.some(c => c.cards === undefined)) {
-      window._cardsDiscovered = true;
-      fetch('/api/truelayer/discover-cards', { method: 'POST', headers: authH })
-        .then(r => r.json())
-        .then(d => { if (d.total_cards > 0) { console.log(`[TL] Discovered ${d.total_cards} credit cards`); loadBanks(); } })
-        .catch(() => {});
-    }
   } catch(e) {
     console.error('Failed to load bank status:', e);
   }
@@ -9788,6 +9783,13 @@ async function tlSync(sinceDate) {
       toast(`✓ Synced: ${d.imported} new transactions`, 'success');
       setTimeout(() => { resultEl.style.display = 'none'; }, 6000);
       await load(); // refresh all charts + data (accounts shown in grouped view)
+
+      // Fetch card balances separately (non-blocking, won't crash sync)
+      const authH2 = { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') };
+      fetch('/api/truelayer/discover-cards', { method: 'POST', headers: authH2 })
+        .then(r => r.json())
+        .then(cd => { if (cd.ok) { load(); } })
+        .catch(() => {});
     } else {
       resultEl.style.display = '';
       resultEl.innerHTML = `<div style="background:var(--rose-dim);border:1px solid rgba(239,68,68,0.25);border-radius:10px;padding:14px 18px;color:var(--rose)">${d.error || 'Sync failed'}</div>`;

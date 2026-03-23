@@ -5294,41 +5294,84 @@ def tl_callback():
 
 @app.route('/api/truelayer/discover-cards', methods=['POST'])
 def tl_discover_cards():
-    """Discover credit cards for existing TrueLayer connections that were created before cards support."""
+    """Discover credit cards, fetch their balances, and create local accounts."""
     connections = load_tl_connections()
     if not connections:
         return jsonify({'error': 'No banks connected'}), 400
 
+    data = load_data()
     total_cards = 0
     errors = []
     for conn in connections:
         if 'cards' in conn and conn['cards']:
             total_cards += len(conn['cards'])
-            continue
-        try:
-            cards_data, cards_err = tl_get(conn, '/data/v1/cards')
-            if cards_data:
+        else:
+            try:
+                cards_data, cards_err = tl_get(conn, '/data/v1/cards')
+                if cards_data:
+                    conn['cards'] = []
+                    for card in cards_data.get('results', []):
+                        conn['cards'].append({
+                            'account_id':   card.get('account_id'),
+                            'display_name': card.get('display_name', card.get('card_network', 'Card')),
+                            'account_type': 'CREDIT_CARD',
+                            'currency':     card.get('currency', 'GBP'),
+                            'provider':     card.get('provider', {}).get('display_name', conn['bank_name']),
+                            'card_network': card.get('card_network', ''),
+                            'card_type':    card.get('card_type', ''),
+                            'partial_card_number': card.get('partial_card_number', ''),
+                        })
+                    total_cards += len(conn['cards'])
+                else:
+                    conn['cards'] = []
+                    if cards_err:
+                        errors.append(f'{conn["bank_name"]}: {cards_err}')
+            except Exception as e:
                 conn['cards'] = []
-                for card in cards_data.get('results', []):
-                    conn['cards'].append({
-                        'account_id':   card.get('account_id'),
-                        'display_name': card.get('display_name', card.get('card_network', 'Card')),
-                        'account_type': 'CREDIT_CARD',
-                        'currency':     card.get('currency', 'GBP'),
-                        'provider':     card.get('provider', {}).get('display_name', conn['bank_name']),
-                        'card_network': card.get('card_network', ''),
-                        'card_type':    card.get('card_type', ''),
-                        'partial_card_number': card.get('partial_card_number', ''),
-                    })
-                total_cards += len(conn['cards'])
-            else:
-                conn['cards'] = []
-                if cards_err:
-                    errors.append(f'{conn["bank_name"]}: {cards_err}')
-        except Exception as e:
-            conn['cards'] = []
-            errors.append(f'{conn["bank_name"]}: {str(e)}')
+                errors.append(f'{conn["bank_name"]}: {str(e)}')
 
+        # Fetch balances and create local accounts for discovered cards
+        for card in conn.get('cards', []):
+            card_id   = card['account_id']
+            currency  = card.get('currency', 'GBP')
+            card_name = card.get('display_name', conn['bank_name'])
+            local_card_id = f"tl_{card_id}"
+
+            # Ensure local account exists
+            existing_ids = [a['id'] for a in data.get('accounts', [])]
+            if local_card_id not in existing_ids:
+                data.setdefault('accounts', []).append({
+                    'id':               local_card_id,
+                    'name':             f"{card_name} ({conn['bank_name']})",
+                    'bank':             conn['bank_name'],
+                    'currency':         currency,
+                    'account_type':     'credit',
+                    'tl_account_id':    card_id,
+                    'tl_connection_id': conn['id'],
+                    'card_network':     card.get('card_network', ''),
+                    'card_type':        card.get('card_type', ''),
+                })
+
+            # Fetch card balance (short 8s timeout via tl_get)
+            try:
+                bal_data, bal_err = tl_get(conn, f'/data/v1/cards/{card_id}/balance')
+                if bal_data:
+                    bal_result = bal_data.get('results', [{}])[0]
+                    balance   = bal_result.get('current', 0)
+                    available = bal_result.get('available', 0)
+                    limit_amt = bal_result.get('credit_limit', 0)
+                    for a in data.get('accounts', []):
+                        if a.get('id') == local_card_id:
+                            a['balance']      = round(balance, 2)
+                            a['available']    = round(available, 2)
+                            a['credit_limit'] = round(limit_amt, 2)
+                            break
+                elif bal_err:
+                    errors.append(f'{card_name} balance: {bal_err}')
+            except Exception as e:
+                errors.append(f'{card_name} balance: {str(e)}')
+
+    save_data(data)
     save_tl_connections(connections)
     return jsonify({'ok': True, 'total_cards': total_cards, 'errors': errors})
 
