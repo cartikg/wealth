@@ -20,7 +20,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db")
 # Render supplies postgres:// but SQLAlchemy 1.4+ requires postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300,
+                       connect_args={'connect_timeout': 5} if 'postgresql' in DATABASE_URL else {})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
@@ -5033,14 +5034,18 @@ TRUELAYER_FILE = os.path.join(_APP_DIR, 'truelayer_connections.json')  # legacy 
 
 def load_tl_connections():
     """Load TrueLayer connections from DB (persistent across Render redeploys)."""
+    db = None
     try:
         db = SessionLocal()
         rows = db.query(TLConnection).all()
-        db.close()
         if rows:
             return [json.loads(r.data) for r in rows]
     except Exception as e:
         print(f'[TL] DB load failed, falling back to file: {e}')
+    finally:
+        if db:
+            try: db.close()
+            except Exception: pass
     # Legacy file fallback (local dev or first run before DB is ready)
     if os.path.exists(TRUELAYER_FILE):
         with open(TRUELAYER_FILE, 'r') as f:
@@ -5048,15 +5053,19 @@ def load_tl_connections():
     return []
 
 def save_tl_connections(connections):
-    """Save TrueLayer connections to DB (persistent across Render redeploys)."""
+    """Save TrueLayer connections to DB (persistent across Render redeploys).
+    Always saves to file as well for redundancy."""
+    # Always write to file first (fast, never hangs)
+    with open(TRUELAYER_FILE, 'w') as f:
+        json.dump(connections, f, indent=2)
+    # Then try DB (may fail with stale connections)
+    db = None
     try:
         db = SessionLocal()
         existing_ids = {r.id for r in db.query(TLConnection).all()}
         new_ids = {c['id'] for c in connections}
-        # Delete removed connections
         for rid in existing_ids - new_ids:
             db.query(TLConnection).filter(TLConnection.id == rid).delete()
-        # Upsert each connection
         for conn in connections:
             row = db.query(TLConnection).filter(TLConnection.id == conn['id']).first()
             if row:
@@ -5064,13 +5073,15 @@ def save_tl_connections(connections):
             else:
                 db.add(TLConnection(id=conn['id'], data=json.dumps(conn)))
         db.commit()
-        db.close()
-        return
     except Exception as e:
-        print(f'[TL] DB save failed, falling back to file: {e}')
-    # Legacy file fallback
-    with open(TRUELAYER_FILE, 'w') as f:
-        json.dump(connections, f, indent=2)
+        print(f'[TL] DB save failed (file saved OK): {e}')
+        if db:
+            try: db.rollback()
+            except Exception: pass
+    finally:
+        if db:
+            try: db.close()
+            except Exception: pass
 
 def tl_refresh_token(connection):
     """Refresh an expired TrueLayer access token."""
